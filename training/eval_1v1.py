@@ -126,9 +126,9 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, render_size=(7
     cl = infos[0].centerline
     lo, hi = cl.min(0), cl.max(0)
     cam = mujoco.MjvCamera()
-    cam.lookat = np.array([float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.3])
-    cam.azimuth, cam.elevation = 45, -50
-    cam.distance = float(max(hi[0] - lo[0], hi[1] - lo[1])) * 1.15 + 4
+    cam.lookat = np.array([float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.0])
+    cam.azimuth, cam.elevation = 45, -55
+    cam.distance = float(max(hi[0] - lo[0], hi[1] - lo[1])) * 1.7 + 5
     frames = []
 
     def state_of(i):
