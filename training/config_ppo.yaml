@@ -11,6 +11,7 @@ env:
     track: straight     # override with env.course.track=l_curved
     length: 9.0
     half_width: 1.6
+    level_difficulty: 0   # Stage-1 obstacles: 0=flat, 1..4 harder
 
   # Forward-velocity is the dense locomotion driver (makes moving beat standing);
   # progress adds goal shaping; success/checkpoint are the big goal bonuses.
@@ -63,6 +64,7 @@ network:
   hidden_sizes: [512, 256, 128]
   activation: elu
   device: cuda
+  init_checkpoint: null   # path to warm-start from (e.g. flat-circuit policy -> obstacles)
 
 # logging
 logger:

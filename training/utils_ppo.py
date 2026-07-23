@@ -51,7 +51,8 @@ def _configs_from_cfg(cfg):
 
     course = ParkourConfig()
     if hasattr(cfg.env, "course"):
-        for k in ("track", "length", "half_width", "checkpoint_spacing", "finish_offset"):
+        for k in ("track", "length", "half_width", "checkpoint_spacing",
+                  "finish_offset", "level_difficulty"):
             if hasattr(cfg.env.course, k):
                 setattr(course, k, getattr(cfg.env.course, k))
 

@@ -76,6 +76,14 @@ def main(cfg: "DictConfig"):  # noqa: F821
     train_env, eval_env = make_environment(cfg)
     actor, critic = make_ppo_models(cfg, train_env, device)
 
+    # Warm-start: initialise from a previously-trained policy (e.g. flat -> obstacles).
+    init_ckpt = getattr(cfg.network, "init_checkpoint", None)
+    if init_ckpt:
+        state = torch.load(init_ckpt, map_location=device, weights_only=False)
+        actor.load_state_dict(state["actor_state_dict"])
+        critic.load_state_dict(state["critic_state_dict"])
+        torchrl_logger.info(f"Warm-started from {init_ckpt}")
+
     adv_module = GAE(
         gamma=cfg.loss.gamma, lmbda=cfg.loss.gae_lambda,
         value_network=critic, average_gae=False, device=device,
@@ -242,15 +250,19 @@ def main(cfg: "DictConfig"):  # noqa: F821
                 actor.train()
 
             if cfg.logger.video and cfg.logger.backend:
-                with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
-                    actor.eval()
-                    frames = rollout_video(
-                        actor, cfg, max_steps=min(1500, eval_rollout_steps),
-                        policy_device=str(device),
-                    )
+                try:
+                    with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
+                        actor.eval()
+                        frames = rollout_video(
+                            actor, cfg, max_steps=min(1500, eval_rollout_steps),
+                            policy_device=str(device),
+                        )
+                        actor.train()
+                        vid = np.transpose(frames, (0, 3, 1, 2)).astype(np.uint8)
+                        wandb.log({"eval/video": wandb.Video(vid, fps=30, format="mp4")})
+                except Exception as exc:   # video is best-effort; never kill training
+                    torchrl_logger.info(f"eval video skipped: {exc}")
                     actor.train()
-                    vid = np.transpose(frames, (0, 3, 1, 2)).astype(np.uint8)
-                    wandb.log({"eval/video": wandb.Video(vid, fps=30, format="mp4")})
 
             ckpt_path = os.path.join(checkpoint_dir, f"ppo_eval_{collected_frames}.pt")
             torch.save({
