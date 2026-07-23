@@ -1,10 +1,21 @@
 # automataleague
 
-A league of robots competing at athletic tasks in [MuJoCo](https://mujoco.org/) —
-parkour first, with boxing, sumo, and sword-fighting to follow. Robots are
-pluggable and interchangeable across tasks; policies are trained with
+A league of robots competing at athletic tasks in [MuJoCo](https://mujoco.org/).
+Robots are pluggable and interchangeable across tasks; policies are trained with
 [TorchRL](https://github.com/pytorch/rl) (PPO), GPU-parallel via
 [MuJoCo-Warp](https://github.com/google-deepmind/mujoco_warp).
+
+## Tasks
+
+| Task | Status | Description |
+|---|---|---|
+| **Parkour** | ✅ implemented | Follow a centerline course (straight → curves → winding circuit) from start to finish, hitting checkpoints; Stage-1 physical obstacles in progress. `automataleague/envs/parkour/` |
+| Boxing | ⬜ planned | Full-contact striking between two robots. |
+| Sumo | ⬜ planned | Push the opponent out of a ring. |
+| Sword-fighting | ⬜ planned | Armed duelling. |
+
+Each task lives in `automataleague/envs/<task>/` and reuses the shared robot
+registry and PPO pipeline.
 
 ## Status — Parkour
 
