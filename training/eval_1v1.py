@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 
 os.environ.setdefault("MUJOCO_GL", "egl")
@@ -37,6 +38,7 @@ from automataleague.envs.parkour.navigation import (  # noqa: E402
 from automataleague.envs.parkour.observation import build_observation  # noqa: E402
 from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU  # noqa: E402
 from automataleague.envs.parkour.scene import build_race_model  # noqa: E402
+from automataleague.envs.parkour.spatial import tilt_angle  # noqa: E402
 from automataleague.envs.parkour.state import extract_state  # noqa: E402
 from automataleague.robots import get_robot  # noqa: E402
 
@@ -61,26 +63,40 @@ def _policy_action(actor, obs):
     return td["action"].squeeze(0).numpy()
 
 
+def _respawn(data, info, robot):
+    """Teleport one robot back to its start pose (used when it falls over)."""
+    ba, da = info.base_qposadr, info.base_dofadr
+    data.qpos[ba:ba + 7] = info.home_qpos[ba:ba + 7]
+    data.qpos[info.joint_qposadr] = robot.home_joint_qpos
+    data.qvel[da:da + 6] = 0.0
+    data.qvel[info.joint_dofadr] = 0.0
+
+
 def time_trial(actor, cfg, robot, max_steps, dt):
-    """Run the agent solo; return (finish_time_s or None, checkpoints_reached)."""
+    """Run the agent solo; on a fall it respawns at the start and keeps trying (the
+    lost time counts). Returns (finish_time_s or None, checkpoints_reached, respawns)."""
     course, rc, tc = _configs_from_cfg(cfg)
+    tc.max_episode_steps = max_steps + 10        # only falls/off-path end a run, not truncation
     env = ParkourEnvCPU(robot=cfg.env.robot, cfg=course, reward_cfg=rc, term_cfg=tc,
                         frame_skip=getattr(cfg.env, "frame_skip", 10))
     obs = env.reset()
+    respawns = 0
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         for step in range(max_steps):
             action = _policy_action(actor, torch.as_tensor(obs, dtype=torch.float32)[None])
             obs, _, term, trunc, info = env.step(action)
             if info["outcome"] == 1:
-                return (step + 1) * dt, int(env.cp_idx.item())
-            if term or trunc:
-                return None, int(env.cp_idx.item())
-    return None, int(env.cp_idx.item())
+                return (step + 1) * dt, int(env.cp_idx.item()), respawns
+            if term or trunc:                     # fell / off-path -> respawn at the start
+                respawns += 1
+                obs = env.reset()
+    return None, int(env.cp_idx.item()), respawns
 
 
 def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
     """Race all agents together in one scene. Returns finish times + frames."""
-    course, _, _ = _configs_from_cfg(cfg)
+    course, _, tc = _configs_from_cfg(cfg)
+    fall_h, max_tilt = tc.fall_height, math.radians(tc.max_tilt_deg)
     model, infos = build_race_model(cfg.env.robot, course, n=len(actors))
     data = mujoco.MjData(model)
     data.qpos[:] = infos[0].home_qpos
@@ -97,6 +113,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
     cp_idx = [0] * len(actors)
     prev_action = [torch.zeros(1, robot.action_dim) for _ in actors]
     finish_step = [None] * len(actors)
+    respawns = [0] * len(actors)
 
     renderer = mujoco.Renderer(model, height=render_size[0], width=render_size[1])
     cam = mujoco.MjvCamera()
@@ -121,13 +138,23 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
             for _ in range(fs):
                 mujoco.mj_step(model, data)
 
-            # advance checkpoints + detect finish
+            # respawn fallers at the start; otherwise advance checkpoints + detect finish
             for i, info in enumerate(infos):
+                if finish_step[i] is not None:
+                    continue
                 st = state_of(i)
+                fell = (float(st.base_pos[0, 2]) < fall_h
+                        or float(tilt_angle(st.base_quat)[0]) > max_tilt)
+                if fell:
+                    _respawn(data, info, robot)
+                    cp_idx[i] = 0
+                    prev_action[i] = torch.zeros(1, robot.action_dim)
+                    respawns[i] += 1
+                    continue
                 _, dist, _ = checkpoint_geometry(st, checkpoints, torch.tensor([cp_idx[i]]))
                 new_idx, _, fin = advance_checkpoints(dist, torch.tensor([cp_idx[i]]), radius, n_cp)
                 cp_idx[i] = int(new_idx.item())
-                if finish_step[i] is None and bool(fin.item()):
+                if bool(fin.item()):
                     finish_step[i] = step + 1
 
             # follow the pack: camera looks at the mean base position
@@ -141,7 +168,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
                 break
     renderer.close()
     times = [None if f is None else f * dt for f in finish_step]
-    return times, cp_idx, np.stack(frames)
+    return times, cp_idx, respawns, np.stack(frames)
 
 
 def main():
@@ -163,17 +190,19 @@ def main():
     print(f"=== Track: {args.track} (level {args.level}) | dt={dt:.3f}s ===\n-- time trials --")
     trials = {}
     for name, (actor, cfg, rob) in zip(args.names, agents):
-        t, cps = time_trial(actor, cfg, rob, args.max_steps, dt)
-        trials[name] = {"time_s": t, "checkpoints": cps, "finished": t is not None}
-        print(f"  {name}: {'DNF' if t is None else f'{t:.2f}s'}  (reached {cps} checkpoints)")
+        t, cps, r = time_trial(actor, cfg, rob, args.max_steps, dt)
+        trials[name] = {"time_s": t, "checkpoints": cps, "respawns": r, "finished": t is not None}
+        print(f"  {name}: {'DNF' if t is None else f'{t:.2f}s'}  "
+              f"({cps} checkpoints, {r} respawns)")
 
     print("\n-- head-to-head --")
     actors = [a[0] for a in agents]
-    times, cps, frames = head_to_head(actors, agents[0][1], robot, args.max_steps, dt)
+    times, cps, resp, frames = head_to_head(actors, agents[0][1], robot, args.max_steps, dt)
     h2h = {}
-    for name, t, c in zip(args.names, times, cps):
-        h2h[name] = {"time_s": t, "checkpoints": c, "finished": t is not None}
-        print(f"  {name}: {'DNF' if t is None else f'{t:.2f}s'}  (reached {c} checkpoints)")
+    for name, t, c, r in zip(args.names, times, cps, resp):
+        h2h[name] = {"time_s": t, "checkpoints": c, "respawns": r, "finished": t is not None}
+        print(f"  {name}: {'DNF' if t is None else f'{t:.2f}s'}  "
+              f"({c} checkpoints, {r} respawns)")
     finishers = [(n, v["time_s"]) for n, v in h2h.items() if v["time_s"] is not None]
     if finishers:
         winner = min(finishers, key=lambda x: x[1])[0]
