@@ -244,7 +244,10 @@ def main(cfg: "DictConfig"):  # noqa: F821
             if cfg.logger.video and cfg.logger.backend:
                 with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
                     actor.eval()
-                    frames = rollout_video(actor, cfg, policy_device=str(device))
+                    frames = rollout_video(
+                        actor, cfg, max_steps=min(1500, eval_rollout_steps),
+                        policy_device=str(device),
+                    )
                     actor.train()
                     vid = np.transpose(frames, (0, 3, 1, 2)).astype(np.uint8)
                     wandb.log({"eval/video": wandb.Video(vid, fps=30, format="mp4")})
