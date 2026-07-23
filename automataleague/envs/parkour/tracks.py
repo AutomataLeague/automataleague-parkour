@@ -146,9 +146,10 @@ def make_circuit(spawn_x: float = 1.0) -> Track:
     """A winding closed circuit from a right/left turn sequence that loops back to
     the start (net 360 deg; solved straights so it closes, no self-crossing)."""
     # net 360; single (non-adjacent) right-turn dents keep the path clear of itself
-    # (no lane overlap) while still winding with left+right turns.
+    # (no lane overlap) while still winding with left+right turns. gap=0 fully closes
+    # the loop so the start and finish lines meet.
     turns = [90, 90, -90, 90, 90, -90, 90, 90]
-    return closed_route(turns, radius=2.2, spawn_x=spawn_x)
+    return closed_route(turns, radius=2.2, gap=0.0, spawn_x=spawn_x)
 
 
 def make_s_curved(
