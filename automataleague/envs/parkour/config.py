@@ -22,18 +22,26 @@ class ParkourConfig:
     line_thickness: float = 0.05  # painted line width, all markers (visual only)
 
     # --- checkpoints ---
-    # Fractions of the corridor length where checkpoints sit (the last one is the
-    # finish line). Reaching the final checkpoint = success.
-    checkpoint_fracs: tuple[float, ...] = (1.0 / 3.0, 2.0 / 3.0, 1.0)
+    # Fractions of the corridor length for the INTERMEDIATE gates (the finish is
+    # handled separately via finish_offset below).
+    checkpoint_fracs: tuple[float, ...] = (1.0 / 3.0, 2.0 / 3.0)
     checkpoint_radius: float = 0.5   # within this xy-distance = checkpoint reached
+    # The success trigger sits this far PAST the visual finish line (drawn at x=length),
+    # so the robot must walk THROUGH the visible line to finish, not stop short of it.
+    finish_offset: float = 0.75
 
     # --- spawn ---
     spawn_x: float = 1.0         # robot base starts here (just past the start line)
     spawn_y: float = 0.0
 
     def checkpoints_xy(self) -> np.ndarray:
-        """(K, 2) array of checkpoint centre xy-coordinates, cp1..finish."""
+        """(K, 2) checkpoint centres: intermediate gates + the finish success point.
+
+        The finish success point is `finish_offset` past the visual finish line, so
+        the reward isn't satisfied until the robot crosses the drawn line.
+        """
         xs = [f * self.length for f in self.checkpoint_fracs]
+        xs.append(self.length + self.finish_offset)
         return np.array([[x, 0.0] for x in xs], dtype=np.float32)
 
 

@@ -85,14 +85,15 @@ def _add_corridor(spec: mujoco.MjSpec, cfg: ParkourConfig) -> None:
     """
     hw, L = cfg.half_width, cfg.length
     lt = cfg.line_thickness
+    lane_end = L + cfg.finish_offset   # lanes continue to the success point past the line
 
     # Path boundary lines at y = ±half_width, running the length of the corridor.
     for sign, tag in ((+1, "left"), (-1, "right")):
         spec.worldbody.add_geom(
             name=f"lane_{tag}",
             type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=[L / 2, lt / 2, _PAINT_HALF_Z],
-            pos=[L / 2, sign * hw, _PAINT_Z],
+            size=[lane_end / 2, lt / 2, _PAINT_HALF_Z],
+            pos=[lane_end / 2, sign * hw, _PAINT_Z],
             rgba=_LANE, contype=0, conaffinity=0,
         )
 
