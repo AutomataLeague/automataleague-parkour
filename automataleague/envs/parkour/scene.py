@@ -197,9 +197,66 @@ def build_parkour_model(
     return model, info
 
 
+def build_race_model(
+    robot: str | RobotSpec = "spot", cfg: ParkourConfig | None = None,
+    n: int = 2, lateral_gap: float = 0.6,
+) -> tuple[mujoco.MjModel, list[SceneInfo]]:
+    """Same track, but with ``n`` robots attached side-by-side on the start line.
+
+    Returns the compiled model and one SceneInfo per robot (each with its own
+    base/joint/actuator addresses; the checkpoints/centerline are shared). All
+    robots share a single combined ``home_qpos`` for reset.
+    """
+    cfg = cfg or ParkourConfig()
+    robot_spec = robot if isinstance(robot, RobotSpec) else get_robot(robot)
+    track = cfg.build_track()
+    checkpoints = cfg.checkpoints_xy()
+
+    spec = mujoco.MjSpec()
+    spec.modelname = f"race_{robot_spec.name}_{track.name}"
+    spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
+    spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
+    spec.option.impratio = 100.0
+    spec.visual.global_.offwidth = 1920
+    spec.visual.global_.offheight = 1080
+    spec.visual.headlight.ambient = [0.4, 0.4, 0.4]
+    spec.visual.headlight.diffuse = [0.5, 0.5, 0.5]
+
+    _add_checker_floor(spec, track.centerline, cfg.half_width + 1.5)
+    _add_track_paint(spec, track, cfg, checkpoints)
+    add_obstacles(spec, track.centerline, cfg)
+    _add_lights(spec, track.centerline)
+
+    sx, sy = track.spawn_xy
+    yaw = track.spawn_heading
+    lat = (-math.sin(yaw), math.cos(yaw))          # perpendicular to the start heading
+    placed = []
+    for i in range(n):
+        off = (i - (n - 1) / 2) * lateral_gap
+        px, py = sx + lat[0] * off, sy + lat[1] * off
+        prefix = f"{robot_spec.name}{i}/"
+        frame = spec.worldbody.add_frame(pos=[px, py, 0.0])
+        spec.attach(robot_spec.load_spec(), prefix=prefix, frame=frame)
+        placed.append((prefix, (px, py)))
+
+    model = spec.compile()
+    home = mujoco.MjData(model).qpos.copy().astype(np.float32)
+    infos = []
+    for prefix, (px, py) in placed:
+        info = _resolve_scene_info(model, robot_spec, cfg, track, checkpoints,
+                                   prefix, spawn=(px, py))
+        home[info.base_qposadr:info.base_qposadr + 3] = [px, py, robot_spec.nominal_height]
+        home[info.base_qposadr + 3:info.base_qposadr + 7] = _yaw_quat(yaw)
+        home[info.joint_qposadr] = robot_spec.home_joint_qpos
+        infos.append(info)
+    for info in infos:
+        info.home_qpos = home                      # shared combined reset pose
+    return model, infos
+
+
 def _resolve_scene_info(
     model: mujoco.MjModel, robot: RobotSpec, cfg: ParkourConfig, track: Track,
-    checkpoints: np.ndarray, prefix: str,
+    checkpoints: np.ndarray, prefix: str, spawn: tuple[float, float] | None = None,
 ) -> SceneInfo:
     def jid(name: str) -> int:
         return mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, prefix + name)
@@ -218,7 +275,7 @@ def _resolve_scene_info(
         dtype=np.int64,
     )
 
-    sx, sy = track.spawn_xy
+    sx, sy = spawn if spawn is not None else track.spawn_xy
     home = mujoco.MjData(model).qpos.copy().astype(np.float32)
     home[base_qposadr:base_qposadr + 3] = [sx, sy, robot.nominal_height]
     home[base_qposadr + 3:base_qposadr + 7] = _yaw_quat(track.spawn_heading)

@@ -5,7 +5,11 @@ from automataleague.envs.parkour.config import (
     RewardConfig,
     TerminationConfig,
 )
-from automataleague.envs.parkour.scene import SceneInfo, build_parkour_model
+from automataleague.envs.parkour.scene import (
+    SceneInfo,
+    build_parkour_model,
+    build_race_model,
+)
 
 __all__ = [
     "ParkourConfig",
@@ -13,4 +17,5 @@ __all__ = [
     "TerminationConfig",
     "SceneInfo",
     "build_parkour_model",
+    "build_race_model",
 ]
