@@ -26,7 +26,13 @@ def compute_reward(
     action: Tensor,
     nominal_height: float,
     rc: RewardConfig,
+    forward_vel: Tensor | None = None,
 ) -> tuple[Tensor, dict[str, Tensor]]:
+    # Forward-velocity toward the goal (m/s), rewarded up to target_speed. Dense
+    # driver that makes moving strictly better than standing.
+    if forward_vel is None:
+        forward_vel = torch.zeros_like(prev_dist)
+    r_forward = rc.forward * forward_vel.clamp(min=0.0, max=rc.target_speed)
     progress = rc.progress * (prev_dist - cur_dist)
     alive = torch.full_like(progress, rc.alive)
     upright = rc.upright * torch.exp(-2.0 * tilt_angle(state.base_quat))
@@ -42,7 +48,8 @@ def compute_reward(
     offpath_pen = -rc.off_path * off_path.float()
 
     components = {
-        "progress": progress, "alive": alive, "upright": upright, "height": height,
+        "forward": r_forward, "progress": progress, "alive": alive,
+        "upright": upright, "height": height,
         "action": action_pen, "joint_vel": jointvel_pen,
         "checkpoint": checkpoint_bonus, "success": success_bonus,
         "fall": fall_pen, "off_path": offpath_pen,

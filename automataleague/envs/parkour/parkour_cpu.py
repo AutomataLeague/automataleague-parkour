@@ -15,7 +15,11 @@ from automataleague.envs.parkour.config import (
     RewardConfig,
     TerminationConfig,
 )
-from automataleague.envs.parkour.navigation import advance_checkpoints, checkpoint_geometry
+from automataleague.envs.parkour.navigation import (
+    advance_checkpoints,
+    checkpoint_geometry,
+    forward_velocity,
+)
 from automataleague.envs.parkour.observation import build_observation
 from automataleague.envs.parkour.rewards import compute_reward
 from automataleague.envs.parkour.scene import build_parkour_model
@@ -74,6 +78,7 @@ class ParkourEnvCPU:
 
         st = self._state()
         to_cp, cur_dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
+        fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
         new_idx, inter, fin = advance_checkpoints(
             cur_dist, self.cp_idx, self.cfg.checkpoint_radius, len(self._checkpoints))
         terminated, truncated, fell, off, outcome = compute_termination(
@@ -81,7 +86,7 @@ class ParkourEnvCPU:
         act_t = torch.tensor(action, dtype=torch.float32).unsqueeze(0)
         reward, comps = compute_reward(
             st, self.prev_dist, cur_dist, inter, fin, fell, off, act_t,
-            self.robot.nominal_height, self.reward_cfg)
+            self.robot.nominal_height, self.reward_cfg, forward_vel=fwd_vel)
 
         # advance bookkeeping: recompute prev_dist for the (possibly advanced) checkpoint
         self.cp_idx = new_idx

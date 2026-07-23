@@ -25,7 +25,11 @@ from automataleague.envs.parkour.config import (
     RewardConfig,
     TerminationConfig,
 )
-from automataleague.envs.parkour.navigation import advance_checkpoints, checkpoint_geometry
+from automataleague.envs.parkour.navigation import (
+    advance_checkpoints,
+    checkpoint_geometry,
+    forward_velocity,
+)
 from automataleague.envs.parkour.observation import build_observation
 from automataleague.envs.parkour.rewards import compute_reward
 from automataleague.envs.parkour.scene import build_parkour_model
@@ -176,6 +180,7 @@ class ParkourEnvWarp(EnvBase):
 
         st = extract_state(*self._get_state_tensors(), self.info)
         _, cur_dist, _ = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
+        fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
         new_idx, inter, fin = advance_checkpoints(
             cur_dist, self.cp_idx, self.cfg.checkpoint_radius, self._num_cp
         )
@@ -184,7 +189,7 @@ class ParkourEnvWarp(EnvBase):
         )
         reward, _ = compute_reward(
             st, self.prev_dist, cur_dist, inter, fin, fell, off, actions,
-            self.robot.nominal_height, self.reward_cfg,
+            self.robot.nominal_height, self.reward_cfg, forward_vel=fwd_vel,
         )
 
         # Task-progress diagnostics, captured PRE-reset so they reflect how far the

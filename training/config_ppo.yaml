@@ -11,10 +11,11 @@ env:
     length: 9.0
     half_width: 1.6
 
-  # Rebalanced so finishing dominates loitering: progress is the dense driver,
-  # success/checkpoint bonuses are large, and per-step "alive" is removed (the
-  # small upright/height shaping is enough to keep it standing while it walks).
+  # Forward-velocity is the dense locomotion driver (makes moving beat standing);
+  # progress adds goal shaping; success/checkpoint are the big goal bonuses.
   reward_weights:
+    forward: 1.5         # reward base speed toward the goal (up to target_speed)
+    target_speed: 1.0    # m/s; forward reward saturates here
     progress: 2.0
     checkpoint: 10.0
     success: 100.0
@@ -33,14 +34,14 @@ env:
 
 # collector
 collector:
-  total_frames: 100_000_000
+  total_frames: 10_000_000
   frames_per_batch: 65536   # num_envs * steps_per_env
   device: cuda
 
 # PPO loss hyperparameters
 loss:
   clip_epsilon: 0.2
-  entropy_coeff: 0.005
+  entropy_coeff: 0.01     # higher exploration to escape the standing local optimum
   critic_coeff: 0.5
   loss_critic_type: l2
   ppo_epochs: 5
@@ -69,6 +70,6 @@ logger:
   group_name: null
   exp_name: ${env.name}_PPO
   mode: online
-  eval_iter: 2_000_000   # eval + video every 2M frames for early visibility
+  eval_iter: 1_000_000   # eval + video every 1M frames
   video: true
   log_outcome_breakdown: true

@@ -41,7 +41,12 @@ class ParkourConfig:
 class RewardConfig:
     """Weights for the parkour reward (see envs/parkour/rewards.py, Phase B)."""
 
-    progress: float = 2.0        # per-metre reduction of distance to current checkpoint
+    # Forward-velocity reward: the DENSE locomotion driver. Rewards base velocity
+    # toward the current checkpoint, capped at target_speed (so moving always beats
+    # standing, without rewarding unstable lunges). This is what makes walking emerge.
+    forward: float = 1.5         # weight on forward speed toward the goal
+    target_speed: float = 1.0    # m/s; reward saturates here
+    progress: float = 2.0        # potential-based goal shaping (distance reduction)
     checkpoint: float = 10.0     # bonus for reaching a checkpoint
     success: float = 100.0       # bonus for reaching the finish
     alive: float = 0.0           # per-step survival bonus (0: avoid loitering optimum)

@@ -26,6 +26,24 @@ def test_distance_and_heading_straight_ahead():
     assert to_cp[0, 0].item() > 0                  # forward is +x in base frame
 
 
+def test_forward_velocity_toward_checkpoint():
+    cps = torch.tensor([[3.0, 0.0], [6.0, 0.0], [9.0, 0.0]])
+    st = _state_at(1.0, 0.0, yaw=0.0)
+    st.base_linvel_world = torch.tensor([[1.0, 0.0, 0.0]])   # moving +x at 1 m/s
+    _, dist, _ = nav.checkpoint_geometry(st, cps, torch.tensor([0]))
+    fv = nav.forward_velocity(st, cps, torch.tensor([0]), dist)
+    assert abs(fv.item() - 1.0) < 1e-5
+
+
+def test_forward_velocity_negative_when_moving_away():
+    cps = torch.tensor([[3.0, 0.0], [6.0, 0.0], [9.0, 0.0]])
+    st = _state_at(1.0, 0.0, yaw=0.0)
+    st.base_linvel_world = torch.tensor([[-1.0, 0.0, 0.0]])  # moving away from goal
+    _, dist, _ = nav.checkpoint_geometry(st, cps, torch.tensor([0]))
+    fv = nav.forward_velocity(st, cps, torch.tensor([0]), dist)
+    assert fv.item() < 0
+
+
 def test_advance_on_reach():
     cps = torch.tensor([[3.0, 0.0], [6.0, 0.0], [9.0, 0.0]])
     dist = torch.tensor([0.3])                     # within radius 0.5

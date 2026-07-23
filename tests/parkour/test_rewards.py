@@ -55,6 +55,20 @@ def test_off_path_penalty_negative():
     assert r.item() < 0
 
 
+def test_forward_velocity_reward_increases_reward():
+    r_move, comps = compute_reward(**_kw(forward_vel=torch.tensor([1.0])))
+    r_still, _ = compute_reward(**_kw(forward_vel=torch.tensor([0.0])))
+    assert r_move.item() > r_still.item()
+    assert "forward" in comps
+
+
+def test_forward_velocity_reward_saturates_at_target_speed():
+    # Beyond target_speed the forward reward should not grow (no lunge incentive).
+    r_at, _ = compute_reward(**_kw(forward_vel=torch.tensor([1.0])))
+    r_over, _ = compute_reward(**_kw(forward_vel=torch.tensor([5.0])))
+    assert abs(r_at.item() - r_over.item()) < 1e-5
+
+
 def test_reward_is_finite_and_shaped():
     r, comps = compute_reward(**_kw())
     assert torch.isfinite(r).all()

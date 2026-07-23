@@ -24,6 +24,15 @@ def checkpoint_geometry(
     return to_cp_base, dist, heading_error
 
 
+def forward_velocity(
+    state: ParkourState, checkpoints_xy: Tensor, cp_idx: Tensor, dist: Tensor
+) -> Tensor:
+    """Component of base velocity (m/s) pointing toward the current checkpoint."""
+    to_cp = checkpoints_xy[cp_idx] - state.base_pos[:, :2]      # [N,2]
+    goal_dir = to_cp / (dist.unsqueeze(-1) + 1e-6)
+    return (state.base_linvel_world[:, :2] * goal_dir).sum(dim=-1)
+
+
 def advance_checkpoints(
     dist: Tensor, cp_idx: Tensor, cp_radius: float, num_cp: int
 ) -> tuple[Tensor, Tensor, Tensor]:
