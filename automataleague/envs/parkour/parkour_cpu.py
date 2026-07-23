@@ -19,6 +19,7 @@ from automataleague.envs.parkour.navigation import (
     advance_checkpoints,
     checkpoint_geometry,
     forward_velocity,
+    point_to_polyline_distance,
 )
 from automataleague.envs.parkour.observation import build_observation
 from automataleague.envs.parkour.rewards import compute_reward
@@ -39,6 +40,7 @@ class ParkourEnvCPU:
         self.data = mujoco.MjData(self.model)
 
         self._checkpoints = torch.tensor(self.info.checkpoints_xy, dtype=torch.float32)
+        self._centerline = torch.tensor(self.info.centerline, dtype=torch.float32)
         self._home_joint = torch.tensor(self.robot.home_joint_qpos, dtype=torch.float32)
         self._act_ids = np.asarray(self.info.actuator_ids)
         self._ctrl0 = np.asarray(self.robot.home_joint_qpos, dtype=np.float64)
@@ -79,10 +81,11 @@ class ParkourEnvCPU:
         st = self._state()
         to_cp, cur_dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
         fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
+        lateral = point_to_polyline_distance(st.base_pos[:, :2], self._centerline)
         new_idx, inter, fin = advance_checkpoints(
             cur_dist, self.cp_idx, self.cfg.checkpoint_radius, len(self._checkpoints))
         terminated, truncated, fell, off, outcome = compute_termination(
-            st, self.step_count, fin, self.cfg.half_width, self.term_cfg)
+            st, self.step_count, fin, lateral, self.cfg.half_width, self.term_cfg)
         act_t = torch.tensor(action, dtype=torch.float32).unsqueeze(0)
         reward, comps = compute_reward(
             st, self.prev_dist, cur_dist, inter, fin, fell, off, act_t,

@@ -16,32 +16,32 @@ def _state(z=0.46, y=0.0, roll=0.0, N=1):
     )
 
 
+def _term(state, step, finish, lateral):
+    return compute_termination(
+        state, torch.tensor([step]), torch.tensor([finish]),
+        torch.tensor([lateral]), 1.6, TerminationConfig())
+
+
 def test_fall_by_height():
-    t, _, fell, _, oc = compute_termination(
-        _state(z=0.1), torch.tensor([10]), torch.tensor([False]), 1.6, TerminationConfig())
+    t, _, fell, _, oc = _term(_state(z=0.1), 10, False, 0.0)
     assert t.item() and fell.item() and oc.item() == 2
 
 
 def test_fall_by_tilt():
-    t, _, fell, _, oc = compute_termination(
-        _state(roll=math.radians(80)), torch.tensor([10]), torch.tensor([False]), 1.6,
-        TerminationConfig())
+    t, _, fell, _, oc = _term(_state(roll=math.radians(80)), 10, False, 0.0)
     assert fell.item() and oc.item() == 2
 
 
 def test_off_path():
-    t, _, _, off, oc = compute_termination(
-        _state(y=2.0), torch.tensor([10]), torch.tensor([False]), 1.6, TerminationConfig())
+    t, _, _, off, oc = _term(_state(y=2.0), 10, False, 2.0)
     assert t.item() and off.item() and oc.item() == 3
 
 
 def test_success_overrides():
-    t, _, _, _, oc = compute_termination(
-        _state(), torch.tensor([10]), torch.tensor([True]), 1.6, TerminationConfig())
+    t, _, _, _, oc = _term(_state(), 10, True, 0.0)
     assert t.item() and oc.item() == 1
 
 
 def test_truncation():
-    _, trunc, _, _, _ = compute_termination(
-        _state(), torch.tensor([1000]), torch.tensor([False]), 1.6, TerminationConfig())
+    _, trunc, _, _, _ = _term(_state(), 1000, False, 0.0)
     assert trunc.item()

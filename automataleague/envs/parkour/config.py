@@ -14,35 +14,35 @@ import numpy as np
 
 @dataclass
 class ParkourConfig:
-    # --- corridor geometry (metres) ---
-    length: float = 9.0          # start line at x=0, finish line at x=length
-    half_width: float = 1.6      # path half-width; boundary lines at y = ±half_width.
-                                 # Also the off-path tolerance: |lateral offset| beyond
-                                 # this terminates the episode (see TerminationConfig).
+    # --- track shape (a centerline polyline; see tracks.py) ---
+    track: str = "straight"      # "straight" | "l_curved" | ...
+    length: float = 9.0          # length of the "straight" track
+    spawn_x: float = 1.0         # spawn distance along the first leg
+
+    # --- path geometry (metres) ---
+    half_width: float = 1.6      # path half-width; boundary lines at ±half_width from the
+                                 # centerline. Also the off-path tolerance: perpendicular
+                                 # distance to the centerline beyond this terminates.
     line_thickness: float = 0.05  # painted line width, all markers (visual only)
 
     # --- checkpoints ---
-    # Fractions of the corridor length for the INTERMEDIATE gates (the finish is
-    # handled separately via finish_offset below).
-    checkpoint_fracs: tuple[float, ...] = (1.0 / 3.0, 2.0 / 3.0)
+    checkpoint_spacing: float = 2.0  # gate spacing along the centerline (metres)
     checkpoint_radius: float = 0.5   # within this xy-distance = checkpoint reached
-    # The success trigger sits this far PAST the visual finish line (drawn at x=length),
-    # so the robot must walk THROUGH the visible line to finish, not stop short of it.
+    # The success trigger sits this far PAST the visual finish line, so the robot must
+    # walk THROUGH the visible line to finish, not stop short of it.
     finish_offset: float = 0.75
 
-    # --- spawn ---
-    spawn_x: float = 1.0         # robot base starts here (just past the start line)
-    spawn_y: float = 0.0
+    def build_track(self):
+        """Construct the Track (centerline polyline) for this config."""
+        from automataleague.envs.parkour.tracks import get_track
+
+        if self.track == "straight":
+            return get_track("straight", length=self.length, spawn_x=self.spawn_x)
+        return get_track(self.track, spawn_x=self.spawn_x)
 
     def checkpoints_xy(self) -> np.ndarray:
-        """(K, 2) checkpoint centres: intermediate gates + the finish success point.
-
-        The finish success point is `finish_offset` past the visual finish line, so
-        the reward isn't satisfied until the robot crosses the drawn line.
-        """
-        xs = [f * self.length for f in self.checkpoint_fracs]
-        xs.append(self.length + self.finish_offset)
-        return np.array([[x, 0.0] for x in xs], dtype=np.float32)
+        """(K, 2) gate waypoints along the centerline, ending at the finish point."""
+        return self.build_track().checkpoints(self.checkpoint_spacing, self.finish_offset)
 
 
 @dataclass

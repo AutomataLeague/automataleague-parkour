@@ -19,15 +19,18 @@ def compute_termination(
     state: ParkourState,
     step_count: Tensor,
     reached_finish: Tensor,
+    lateral_dist: Tensor,
     half_width: float,
     tc: TerminationConfig,
 ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+    """`lateral_dist` [N] is the perpendicular distance from the base to the path
+    centerline (see navigation.point_to_polyline_distance)."""
     device = state.base_pos.device
     max_tilt = math.radians(tc.max_tilt_deg)
 
     fell = (state.base_pos[:, 2] < tc.fall_height) | (tilt_angle(state.base_quat) > max_tilt)
     if tc.off_path:
-        off_path = state.base_pos[:, 1].abs() > half_width
+        off_path = lateral_dist > half_width
     else:
         off_path = torch.zeros_like(fell)
 

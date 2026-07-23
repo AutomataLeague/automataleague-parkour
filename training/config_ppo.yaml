@@ -8,6 +8,7 @@ env:
   frame_skip: 10           # ~50 Hz control
 
   course:
+    track: straight     # override with env.course.track=l_curved
     length: 9.0
     half_width: 1.6
 

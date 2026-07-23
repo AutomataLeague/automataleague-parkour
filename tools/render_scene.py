@@ -46,13 +46,15 @@ def render_scene(robot: str, cfg: ParkourConfig, width: int, height: int) -> dic
         f"ngeom={model.ngeom} | base@home={info.home_qpos[info.base_qposadr:info.base_qposadr + 3]}"
     )
 
-    L = cfg.length
-    centre = [L / 2, 0.0, 0.3]
+    # Frame the whole track from its centerline extent.
+    cl = info.centerline
+    lo, hi = cl.min(0), cl.max(0)
+    centre = [float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.3]
+    span = float(max(hi[0] - lo[0], hi[1] - lo[1])) + 4.0
     views = {
-        "iso": _camera(centre, azimuth=45, elevation=-22, distance=L * 1.1),
-        "top": _camera(centre, azimuth=90, elevation=-89, distance=L * 1.15),
-        "side": _camera(centre, azimuth=90, elevation=-12, distance=L * 1.0),
-        "spawn": _camera([cfg.spawn_x + 1.0, 0.0, 0.4], azimuth=35, elevation=-18, distance=3.5),
+        "iso": _camera(centre, azimuth=45, elevation=-28, distance=span * 1.1),
+        "top": _camera(centre, azimuth=90, elevation=-89, distance=span * 1.15),
+        "side": _camera(centre, azimuth=70, elevation=-18, distance=span * 1.05),
     }
 
     renderer = mujoco.Renderer(model, height=height, width=width)
@@ -67,13 +69,14 @@ def render_scene(robot: str, cfg: ParkourConfig, width: int, height: int) -> dic
 def main() -> None:
     p = argparse.ArgumentParser(description="Render parkour scene screenshots.")
     p.add_argument("--robot", default="spot")
+    p.add_argument("--track", default="straight")
     p.add_argument("--length", type=float, default=None)
     p.add_argument("--half-width", type=float, default=None)
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     args = p.parse_args()
 
-    cfg = ParkourConfig()
+    cfg = ParkourConfig(track=args.track)
     if args.length is not None:
         cfg.length = args.length
     if args.half_width is not None:

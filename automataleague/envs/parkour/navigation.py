@@ -24,6 +24,25 @@ def checkpoint_geometry(
     return to_cp_base, dist, heading_error
 
 
+def point_to_polyline_distance(points: Tensor, polyline: Tensor) -> Tensor:
+    """Perpendicular distance from each point [N,2] to a polyline [M,2] -> [N].
+
+    Minimum over all segments of the point-to-segment distance. Used for off-path
+    detection on curved centerlines (straight centerline reduces to |lateral|).
+    """
+    a = polyline[:-1]                      # [S,2] segment starts
+    b = polyline[1:]                       # [S,2] segment ends
+    ab = b - a                             # [S,2]
+    p = points.unsqueeze(1)                # [N,1,2]
+    ap = p - a.unsqueeze(0)                # [N,S,2]
+    ab2 = (ab * ab).sum(-1).clamp(min=1e-9)          # [S]
+    t = (ap * ab.unsqueeze(0)).sum(-1) / ab2         # [N,S]
+    t = t.clamp(0.0, 1.0)
+    proj = a.unsqueeze(0) + t.unsqueeze(-1) * ab.unsqueeze(0)   # [N,S,2]
+    dist = torch.linalg.norm(p - proj, dim=-1)       # [N,S]
+    return dist.min(dim=1).values                    # [N]
+
+
 def forward_velocity(
     state: ParkourState, checkpoints_xy: Tensor, cp_idx: Tensor, dist: Tensor
 ) -> Tensor:

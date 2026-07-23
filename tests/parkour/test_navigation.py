@@ -26,6 +26,21 @@ def test_distance_and_heading_straight_ahead():
     assert to_cp[0, 0].item() > 0                  # forward is +x in base frame
 
 
+def test_point_to_polyline_distance_straight():
+    line = torch.tensor([[0.0, 0.0], [9.0, 0.0]])
+    pts = torch.tensor([[5.0, 0.5], [5.0, -1.2], [3.0, 0.0]])
+    d = nav.point_to_polyline_distance(pts, line)
+    assert torch.allclose(d, torch.tensor([0.5, 1.2, 0.0]), atol=1e-5)
+
+
+def test_point_to_polyline_distance_corner():
+    # L-ish polyline: east then north. Point near the north leg.
+    line = torch.tensor([[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]])
+    pts = torch.tensor([[5.3, 3.0]])   # 0.3 to the right of the north leg
+    d = nav.point_to_polyline_distance(pts, line)
+    assert abs(d.item() - 0.3) < 1e-5
+
+
 def test_forward_velocity_toward_checkpoint():
     cps = torch.tensor([[3.0, 0.0], [6.0, 0.0], [9.0, 0.0]])
     st = _state_at(1.0, 0.0, yaw=0.0)
