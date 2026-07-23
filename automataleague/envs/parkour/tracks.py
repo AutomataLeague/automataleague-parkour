@@ -104,25 +104,14 @@ def build_centerline(segments: list[tuple], deg_per_pt: float = 4.0) -> np.ndarr
     return np.array(pts, dtype=np.float32)
 
 
-def make_circuit(radius: float = 2.0, spawn_x: float = 1.0) -> Track:
-    """A winding start-to-finish course: several S-bends (alternating left/right
-    turns) travelling across the arena from a distinct start to a distinct finish."""
-    r = radius
-    segments = [
-        ("straight", 3.0),
-        ("arc", 90, r),     # left  -> north
-        ("straight", 2.0),
-        ("arc", -90, r),    # right -> east      (S-bend 1)
-        ("straight", 4.0),
-        ("arc", -90, r),    # right -> south
-        ("straight", 2.0),
-        ("arc", 90, r),     # left  -> east      (S-bend 2)
-        ("straight", 4.0),
-        ("arc", 90, r),     # left  -> north
-        ("straight", 2.0),
-        ("arc", -90, r),    # right -> east      (S-bend 3)
-        ("straight", 3.0),
-    ]
+def make_circuit(spawn_x: float = 1.0) -> Track:
+    """A closed winding circuit: three lobes with S-dents (net 360 deg) that loops
+    back so the finish nearly meets the start, with a small opening between them."""
+    # Three-fold winding loop (lobe = left arc, dent = right arc). The last dent is
+    # trimmed so the finish stops just short of the start (a distinct start/finish).
+    lobe = [("arc", 160, 3.0), ("arc", -40, 1.2)]
+    segments = lobe + lobe + [("arc", 160, 3.0), ("arc", -40, 1.2)]
+    segments[-1] = ("arc", -18, 1.2)   # trim the final dent -> small start/finish gap
     return Track("circuit", build_centerline(segments), (spawn_x, 0.0), 0.0)
 
 
