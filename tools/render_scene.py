@@ -70,13 +70,14 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Render parkour scene screenshots.")
     p.add_argument("--robot", default="spot")
     p.add_argument("--track", default="straight")
+    p.add_argument("--level", type=int, default=0, help="obstacle difficulty 0-4")
     p.add_argument("--length", type=float, default=None)
     p.add_argument("--half-width", type=float, default=None)
     p.add_argument("--width", type=int, default=1280)
     p.add_argument("--height", type=int, default=720)
     args = p.parse_args()
 
-    cfg = ParkourConfig(track=args.track)
+    cfg = ParkourConfig(track=args.track, level_difficulty=args.level)
     if args.length is not None:
         cfg.length = args.length
     if args.half_width is not None:

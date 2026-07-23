@@ -18,6 +18,7 @@ import mujoco
 import numpy as np
 
 from automataleague.envs.parkour.config import ParkourConfig
+from automataleague.envs.parkour.obstacles import add_obstacles
 from automataleague.envs.parkour.tracks import Track
 from automataleague.robots import RobotSpec, get_robot
 
@@ -177,9 +178,13 @@ def build_parkour_model(
     spec.option.impratio = 100.0
     spec.visual.global_.offwidth = 1920
     spec.visual.global_.offheight = 1080
+    # Brighter ambient so terrain/obstacles read clearly (the scene was quite dark).
+    spec.visual.headlight.ambient = [0.4, 0.4, 0.4]
+    spec.visual.headlight.diffuse = [0.5, 0.5, 0.5]
 
     _add_checker_floor(spec, track.centerline, cfg.half_width + 1.5)
     _add_track_paint(spec, track, cfg, checkpoints)
+    add_obstacles(spec, track.centerline, cfg)      # Stage-1 physical terrain
     _add_lights(spec, track.centerline)
 
     prefix = f"{robot_spec.name}/"

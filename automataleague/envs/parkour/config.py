@@ -19,6 +19,10 @@ class ParkourConfig:
     length: float = 9.0          # length of the "straight" track
     spawn_x: float = 1.0         # spawn distance along the first leg
 
+    # --- Stage-1 obstacles (see obstacles.py). 0 = flat; 1..4 scale up step
+    # heights / ramp & incline angles for a difficulty curriculum. ---
+    level_difficulty: int = 0
+
     # --- path geometry (metres) ---
     half_width: float = 1.6      # path half-width; boundary lines at ±half_width from the
                                  # centerline. Also the off-path tolerance: perpendicular
