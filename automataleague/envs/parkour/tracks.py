@@ -104,20 +104,21 @@ def build_centerline(segments: list[tuple], deg_per_pt: float = 4.0) -> np.ndarr
     return np.array(pts, dtype=np.float32)
 
 
-def make_circuit(spawn_x: float = 1.0) -> Track:
-    """A small winding circuit: several left/right turns from start to finish."""
+def make_circuit(
+    bottom: float = 7.0, side: float = 5.0, radius: float = 2.2,
+    gap: float = 1.4, spawn_x: float = 1.5,
+) -> Track:
+    """A closing lap: four left turns around a rounded rectangle, finishing just
+    beside the start (a `gap`-metre opening so start/finish lines stay distinct)."""
     segments = [
-        ("straight", 3.0),
-        ("arc", 90, 2.0),    # left
-        ("straight", 2.5),
-        ("arc", -90, 2.0),   # right
-        ("straight", 2.5),
-        ("arc", -90, 2.0),   # right
-        ("straight", 2.5),
-        ("arc", 90, 2.0),    # left
-        ("straight", 2.5),
-        ("arc", 90, 2.0),    # left
-        ("straight", 3.0),
+        ("straight", bottom),
+        ("arc", 90, radius),        # -> north
+        ("straight", side),
+        ("arc", 90, radius),        # -> west
+        ("straight", bottom),
+        ("arc", 90, radius),        # -> south
+        ("straight", side - gap),   # stop short so the loop doesn't fully close
+        ("arc", 90, radius),        # -> east, ending `gap` beside the start
     ]
     return Track("circuit", build_centerline(segments), (spawn_x, 0.0), 0.0)
 
