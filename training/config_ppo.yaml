@@ -1,0 +1,71 @@
+# PPO training for parkour with GPU-parallel MuJoCo-Warp environments
+env:
+  name: parkour_spot
+  robot: spot
+  num_envs: 2048           # scaled for Jetson Orin; raise on bigger GPUs
+  max_episode_steps: 1000
+  seed: 42
+  frame_skip: 10           # ~50 Hz control
+
+  course:
+    length: 9.0
+    half_width: 1.6
+
+  reward_weights:
+    progress: 1.0
+    checkpoint: 5.0
+    success: 50.0
+    alive: 0.05
+    upright: 0.1
+    height: 0.1
+    action: 0.01
+    joint_vel: 0.001
+    fall: 10.0
+    off_path: 10.0
+
+  termination:
+    fall_height: 0.25
+    max_tilt_deg: 60.0
+    off_path: true
+
+# collector
+collector:
+  total_frames: 100_000_000
+  frames_per_batch: 65536   # num_envs * steps_per_env
+  device: cuda
+
+# PPO loss hyperparameters
+loss:
+  clip_epsilon: 0.2
+  entropy_coeff: 0.005
+  critic_coeff: 0.5
+  loss_critic_type: l2
+  ppo_epochs: 5
+  mini_batch_size: 8192
+  gamma: 0.99
+  gae_lambda: 0.95
+  max_grad_norm: 1.0
+  anneal_lr: true
+  anneal_clip_epsilon: true
+
+# optim
+optim:
+  lr: 3.0e-4
+  device: cuda
+
+# network
+network:
+  hidden_sizes: [512, 256, 128]
+  activation: elu
+  device: cuda
+
+# logging
+logger:
+  backend: wandb
+  project_name: automataleague-parkour
+  group_name: null
+  exp_name: ${env.name}_PPO
+  mode: online
+  eval_iter: 5_000_000
+  video: true
+  log_outcome_breakdown: true
