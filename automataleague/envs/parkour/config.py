@@ -41,16 +41,16 @@ class ParkourConfig:
 class RewardConfig:
     """Weights for the parkour reward (see envs/parkour/rewards.py, Phase B)."""
 
-    progress: float = 1.0        # per-metre reduction of distance to current checkpoint
-    checkpoint: float = 5.0      # bonus for reaching a checkpoint
-    success: float = 50.0        # bonus for reaching the finish
-    alive: float = 0.05          # per-step survival bonus
-    upright: float = 0.1         # exp-shaped uprightness
-    height: float = 0.1          # exp-shaped height-keeping
+    progress: float = 2.0        # per-metre reduction of distance to current checkpoint
+    checkpoint: float = 10.0     # bonus for reaching a checkpoint
+    success: float = 100.0       # bonus for reaching the finish
+    alive: float = 0.0           # per-step survival bonus (0: avoid loitering optimum)
+    upright: float = 0.05        # exp-shaped uprightness (low, so standing isn't optimal)
+    height: float = 0.05         # exp-shaped height-keeping
     action: float = 0.01         # penalty on action magnitude
     joint_vel: float = 0.001     # penalty on joint velocity (smoothness/energy)
     fall: float = 10.0           # one-off penalty (negative) when the robot falls
-    off_path: float = 10.0       # one-off penalty (negative) when it strays off the path
+    off_path: float = 25.0       # one-off penalty (negative) + terminate when off the path
 
 
 @dataclass

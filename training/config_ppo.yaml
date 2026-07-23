@@ -11,17 +11,20 @@ env:
     length: 9.0
     half_width: 1.6
 
+  # Rebalanced so finishing dominates loitering: progress is the dense driver,
+  # success/checkpoint bonuses are large, and per-step "alive" is removed (the
+  # small upright/height shaping is enough to keep it standing while it walks).
   reward_weights:
-    progress: 1.0
-    checkpoint: 5.0
-    success: 50.0
-    alive: 0.05
-    upright: 0.1
-    height: 0.1
+    progress: 2.0
+    checkpoint: 10.0
+    success: 100.0
+    alive: 0.0
+    upright: 0.05        # small posture shaping (low, so standing isn't a local optimum)
+    height: 0.05
     action: 0.01
     joint_vel: 0.001
     fall: 10.0
-    off_path: 10.0
+    off_path: 25.0       # off-track = terminate + strong penalty (stay on the path)
 
   termination:
     fall_height: 0.25
@@ -66,6 +69,6 @@ logger:
   group_name: null
   exp_name: ${env.name}_PPO
   mode: online
-  eval_iter: 5_000_000
+  eval_iter: 2_000_000   # eval + video every 2M frames for early visibility
   video: true
   log_outcome_breakdown: true

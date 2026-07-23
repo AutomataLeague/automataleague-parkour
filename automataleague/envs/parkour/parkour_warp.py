@@ -187,6 +187,12 @@ class ParkourEnvWarp(EnvBase):
             self.robot.nominal_height, self.reward_cfg,
         )
 
+        # Task-progress diagnostics, captured PRE-reset so they reflect how far the
+        # episode actually got (distance to the finish line + checkpoints reached).
+        finish_xy = self._checkpoints[-1]
+        dist_to_finish = torch.linalg.norm(st.base_pos[:, :2] - finish_xy, dim=-1)
+        checkpoint_idx = new_idx.to(torch.float32)
+
         self.cp_idx = new_idx
         self.prev_action = actions
         done = terminated | truncated
@@ -208,6 +214,8 @@ class ParkourEnvWarp(EnvBase):
                 "terminated": terminated.unsqueeze(-1),
                 "truncated": truncated.unsqueeze(-1),
                 "outcome": outcome,
+                "dist_to_finish": dist_to_finish.unsqueeze(-1),
+                "checkpoint_idx": checkpoint_idx.unsqueeze(-1),
             },
             batch_size=self.batch_size,
             device=self._device,

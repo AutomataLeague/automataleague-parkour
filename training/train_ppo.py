@@ -154,6 +154,19 @@ def main(cfg: "DictConfig"):  # noqa: F821
                 episode_length.sum().item() / len(episode_length)
             )
 
+        # Task-progress metrics at episode end — the honest "did it move toward the
+        # finish?" signal, independent of reward shaping (guards against loitering).
+        done_flat = data["next", "done"].squeeze(-1)
+        if done_flat.any():
+            if ("next", "checkpoint_idx") in data.keys(True):
+                metrics_to_log["train/checkpoints_reached"] = (
+                    data["next", "checkpoint_idx"][done_flat].mean().item()
+                )
+            if ("next", "dist_to_finish") in data.keys(True):
+                metrics_to_log["train/final_dist_to_finish"] = (
+                    data["next", "dist_to_finish"][done_flat].mean().item()
+                )
+
         if ("next", "outcome") in data.keys(True):
             done_mask = data["next", "done"].squeeze(-1)
             if done_mask.any():
@@ -213,6 +226,19 @@ def main(cfg: "DictConfig"):  # noqa: F821
                 metrics_to_log["eval/reward"] = eval_reward
                 metrics_to_log["eval/episode_length"] = eval_rollout.batch_size[-1]
                 metrics_to_log["eval/time"] = time.time() - eval_start
+
+                # Did the single eval episode actually reach the finish, and how far?
+                if ("next", "outcome") in eval_rollout.keys(True):
+                    reached = (eval_rollout["next", "outcome"] == 1).any().item()
+                    metrics_to_log["eval/reached_finish"] = float(reached)
+                if ("next", "checkpoint_idx") in eval_rollout.keys(True):
+                    metrics_to_log["eval/max_checkpoint"] = (
+                        eval_rollout["next", "checkpoint_idx"].max().item()
+                    )
+                if ("next", "dist_to_finish") in eval_rollout.keys(True):
+                    metrics_to_log["eval/final_dist_to_finish"] = (
+                        eval_rollout["next", "dist_to_finish"][..., -1, :].mean().item()
+                    )
                 actor.train()
 
             if cfg.logger.video and cfg.logger.backend:
