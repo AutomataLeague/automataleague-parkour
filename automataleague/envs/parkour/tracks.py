@@ -72,9 +72,30 @@ def make_l_curved(
     return Track("l_curved", centerline, (spawn_x, 0.0), 0.0)
 
 
+def make_s_curved(
+    leg1: float = 4.0, radius: float = 2.5, mid: float = 2.0, leg3: float = 4.0,
+    spawn_x: float = 1.0, arc_pts: int = 40,
+) -> Track:
+    """East leg -> left arc (turn north) -> north leg -> right arc (turn east) -> east
+    leg. An S made of two opposite quarter-circle bends."""
+    # Arc 1: left turn east->north, centered at (leg1, radius).
+    c1 = np.array([leg1, radius])
+    th1 = np.linspace(-np.pi / 2, 0.0, arc_pts)
+    arc1 = c1 + radius * np.stack([np.cos(th1), np.sin(th1)], axis=1)
+    mid_end = arc1[-1] + np.array([0.0, mid])            # north leg
+    # Arc 2: right turn north->east, centered to the east of mid_end.
+    c2 = mid_end + np.array([radius, 0.0])
+    th2 = np.linspace(np.pi, np.pi / 2, arc_pts)
+    arc2 = c2 + radius * np.stack([np.cos(th2), np.sin(th2)], axis=1)
+    end = arc2[-1] + np.array([leg3, 0.0])               # final east leg
+    centerline = np.vstack([[0.0, 0.0], arc1, mid_end, arc2, end]).astype(np.float32)
+    return Track("s_curved", centerline, (spawn_x, 0.0), 0.0)
+
+
 TRACKS: dict[str, Callable[..., Track]] = {
     "straight": make_straight,
     "l_curved": make_l_curved,
+    "s_curved": make_s_curved,
 }
 
 
