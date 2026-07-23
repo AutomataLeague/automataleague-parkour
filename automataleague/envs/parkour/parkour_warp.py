@@ -45,6 +45,11 @@ class ParkourEnvWarp(EnvBase):
         reward_cfg: RewardConfig | None = None,
         term_cfg: TerminationConfig | None = None,
         frame_skip: int = 10,
+        # per-world constraint/contact buffer sizes for MuJoCo-Warp. Spot is
+        # contact-rich (4 condim=6 feet); defaults must exceed the peak constraint
+        # count or MuJoCo-Warp silently drops constraints ("nefc overflow").
+        njmax: int = 200,
+        nconmax: int = 40,
         # reset noise (small domain randomization on the start pose)
         reset_pos_noise: float = 0.05,
         reset_joint_noise: float = 0.05,
@@ -64,7 +69,9 @@ class ParkourEnvWarp(EnvBase):
         self.robot = self.info.robot
 
         self._mjw_model = mjw.put_model(self._mjm)
-        self._mjw_data = mjw.make_data(self._mjm, nworld=num_envs)
+        self._mjw_data = mjw.make_data(
+            self._mjm, nworld=num_envs, nconmax=nconmax, njmax=njmax
+        )
 
         self._nq = self._mjm.nq
         self._nv = self._mjm.nv
