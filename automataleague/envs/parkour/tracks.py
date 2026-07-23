@@ -104,15 +104,51 @@ def build_centerline(segments: list[tuple], deg_per_pt: float = 4.0) -> np.ndarr
     return np.array(pts, dtype=np.float32)
 
 
+def _route_segments(straights: list[float], turns: list[float], radius: float) -> list[tuple]:
+    segs: list[tuple] = []
+    for i, length in enumerate(straights):
+        segs.append(("straight", length))
+        if i < len(turns):
+            segs.append(("arc", turns[i], radius))
+    return segs
+
+
+def closed_route(turns: list[float], radius: float = 2.0, base: float = 3.0,
+                 gap: float = 1.6, spawn_x: float = 1.0, name: str = "circuit") -> Track:
+    """Build a closed winding loop from a turn sequence (signed degrees; + = left).
+
+    The turns must net +/-360 deg (so the heading closes). Straight lengths enter the
+    end position linearly, so we solve them with least-squares to return to the start,
+    then trim the final straight by `gap` to leave a small start/finish opening.
+    """
+    n = len(turns) + 1
+    headings = [0.0]
+    for t in turns:
+        headings.append(headings[-1] + np.radians(t))
+    dirs = np.array([[np.cos(h), np.sin(h)] for h in headings])          # (n,2)
+    arc_only = build_centerline(_route_segments([0.0] * n, turns, radius))
+    offset = arc_only[-1] - arc_only[0]
+    A = dirs.T                                                          # (2,n)
+    for _ in range(20):
+        b = -offset - A @ (base * np.ones(n))
+        delta, *_ = np.linalg.lstsq(A, b, rcond=None)
+        straights = base + delta
+        if straights.min() >= 1.5 or base > 8.0:
+            break
+        base += 0.5
+    straights = straights.copy()
+    straights[-1] = max(0.4, straights[-1] - gap)   # small start/finish opening
+    cl = build_centerline(_route_segments(list(straights), turns, radius))
+    return Track(name, cl, (spawn_x, 0.0), 0.0)
+
+
 def make_circuit(spawn_x: float = 1.0) -> Track:
-    """A closed winding circuit: three lobes with S-dents (net 360 deg) that loops
-    back so the finish nearly meets the start, with a small opening between them."""
-    # Three-fold winding loop (lobe = left arc, dent = right arc). The last dent is
-    # trimmed so the finish stops just short of the start (a distinct start/finish).
-    lobe = [("arc", 160, 3.0), ("arc", -40, 1.2)]
-    segments = lobe + lobe + [("arc", 160, 3.0), ("arc", -40, 1.2)]
-    segments[-1] = ("arc", -18, 1.2)   # trim the final dent -> small start/finish gap
-    return Track("circuit", build_centerline(segments), (spawn_x, 0.0), 0.0)
+    """A winding closed circuit from a right/left turn sequence that loops back to
+    the start (net 360 deg; solved straights so it closes, no self-crossing)."""
+    # net 360; single (non-adjacent) right-turn dents keep the path clear of itself
+    # (no lane overlap) while still winding with left+right turns.
+    turns = [90, 90, -90, 90, 90, -90, 90, 90]
+    return closed_route(turns, radius=2.2, spawn_x=spawn_x)
 
 
 def make_s_curved(
