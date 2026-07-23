@@ -72,6 +72,56 @@ def make_l_curved(
     return Track("l_curved", centerline, (spawn_x, 0.0), 0.0)
 
 
+def build_centerline(segments: list[tuple], deg_per_pt: float = 4.0) -> np.ndarray:
+    """Walk out a centerline from a sequence of moves (turtle-style).
+
+    segments: list of ("straight", length) or ("arc", angle_deg, radius).
+    Positive angle = left turn (CCW), negative = right. Start at (0,0) heading +x.
+    """
+    pos = np.array([0.0, 0.0])
+    heading = 0.0
+    pts = [pos.copy()]
+    for seg in segments:
+        if seg[0] == "straight":
+            length = seg[1]
+            pos = pos + length * np.array([np.cos(heading), np.sin(heading)])
+            pts.append(pos.copy())
+        elif seg[0] == "arc":
+            angle_deg, radius = seg[1], seg[2]
+            angle = np.radians(angle_deg)
+            sign = 1.0 if angle >= 0 else -1.0
+            perp = sign * np.array([-np.sin(heading), np.cos(heading)])   # toward centre
+            center = pos + radius * perp
+            start_ang = np.arctan2(pos[1] - center[1], pos[0] - center[0])
+            n = max(2, int(abs(angle_deg) / deg_per_pt))
+            for k in range(1, n + 1):
+                a = start_ang + angle * k / n
+                pts.append(center + radius * np.array([np.cos(a), np.sin(a)]))
+            pos = pts[-1].copy()
+            heading += angle
+        else:
+            raise ValueError(f"unknown segment {seg!r}")
+    return np.array(pts, dtype=np.float32)
+
+
+def make_circuit(spawn_x: float = 1.0) -> Track:
+    """A small winding circuit: several left/right turns from start to finish."""
+    segments = [
+        ("straight", 3.0),
+        ("arc", 90, 2.0),    # left
+        ("straight", 2.5),
+        ("arc", -90, 2.0),   # right
+        ("straight", 2.5),
+        ("arc", -90, 2.0),   # right
+        ("straight", 2.5),
+        ("arc", 90, 2.0),    # left
+        ("straight", 2.5),
+        ("arc", 90, 2.0),    # left
+        ("straight", 3.0),
+    ]
+    return Track("circuit", build_centerline(segments), (spawn_x, 0.0), 0.0)
+
+
 def make_s_curved(
     leg1: float = 4.0, radius: float = 2.5, mid: float = 2.0, leg3: float = 4.0,
     spawn_x: float = 1.0, arc_pts: int = 40,
@@ -96,6 +146,7 @@ TRACKS: dict[str, Callable[..., Track]] = {
     "straight": make_straight,
     "l_curved": make_l_curved,
     "s_curved": make_s_curved,
+    "circuit": make_circuit,
 }
 
 
