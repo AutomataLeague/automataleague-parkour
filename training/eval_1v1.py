@@ -72,28 +72,33 @@ def _respawn(data, info, robot):
     data.qvel[info.joint_dofadr] = 0.0
 
 
-def time_trial(actor, cfg, robot, max_steps, dt):
-    """Run the agent solo; on a fall it respawns at the start and keeps trying (the
-    lost time counts). Returns (finish_time_s or None, checkpoints_reached, respawns)."""
+def time_trial(actor, cfg, robot, max_steps, dt, freeze_steps):
+    """Run the agent solo; on a fall it respawns at the start after a wait (the lost
+    time counts). Returns (finish_time_s or None, checkpoints_reached, respawns)."""
     course, rc, tc = _configs_from_cfg(cfg)
     tc.max_episode_steps = max_steps + 10        # only falls/off-path end a run, not truncation
     env = ParkourEnvCPU(robot=cfg.env.robot, cfg=course, reward_cfg=rc, term_cfg=tc,
                         frame_skip=getattr(cfg.env, "frame_skip", 10))
     obs = env.reset()
-    respawns = 0
+    respawns, freeze = 0, 0
+    hold = np.zeros(robot.action_dim, dtype=np.float32)   # zero action = hold home stance
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
         for step in range(max_steps):
-            action = _policy_action(actor, torch.as_tensor(obs, dtype=torch.float32)[None])
+            if freeze > 0:                        # respawn wait: stand still at the start
+                action, freeze = hold, freeze - 1
+            else:
+                action = _policy_action(actor, torch.as_tensor(obs, dtype=torch.float32)[None])
             obs, _, term, trunc, info = env.step(action)
             if info["outcome"] == 1:
                 return (step + 1) * dt, int(env.cp_idx.item()), respawns
-            if term or trunc:                     # fell / off-path -> respawn at the start
+            if freeze == 0 and (term or trunc):   # fell / off-path -> respawn + wait
                 respawns += 1
                 obs = env.reset()
+                freeze = freeze_steps
     return None, int(env.cp_idx.item()), respawns
 
 
-def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
+def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, render_size=(720, 1280)):
     """Race all agents together in one scene. Returns finish times + frames."""
     course, _, tc = _configs_from_cfg(cfg)
     fall_h, max_tilt = tc.fall_height, math.radians(tc.max_tilt_deg)
@@ -114,9 +119,16 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
     prev_action = [torch.zeros(1, robot.action_dim) for _ in actors]
     finish_step = [None] * len(actors)
     respawns = [0] * len(actors)
+    freeze = [0] * len(actors)                 # respawn wait counter per robot
 
     renderer = mujoco.Renderer(model, height=render_size[0], width=render_size[1])
+    # Fixed camera framing the whole track (never jumps on a respawn).
+    cl = infos[0].centerline
+    lo, hi = cl.min(0), cl.max(0)
     cam = mujoco.MjvCamera()
+    cam.lookat = np.array([float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.3])
+    cam.azimuth, cam.elevation = 45, -50
+    cam.distance = float(max(hi[0] - lo[0], hi[1] - lo[1])) * 1.15 + 4
     frames = []
 
     def state_of(i):
@@ -128,6 +140,10 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
         for step in range(max_steps):
             # each agent acts on its own observation (blind to the opponent)
             for i, (actor, info) in enumerate(zip(actors, infos)):
+                if freeze[i] > 0:                          # respawn wait: hold at the start
+                    data.ctrl[info.actuator_ids] = ctrl0
+                    freeze[i] -= 1
+                    continue
                 st = state_of(i)
                 to_cp, dist, herr = checkpoint_geometry(st, checkpoints, torch.tensor([cp_idx[i]]))
                 obs = build_observation(st, to_cp, dist, herr, prev_action[i], home_joint)
@@ -138,9 +154,9 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
             for _ in range(fs):
                 mujoco.mj_step(model, data)
 
-            # respawn fallers at the start; otherwise advance checkpoints + detect finish
+            # respawn fallers (then wait); otherwise advance checkpoints + detect finish
             for i, info in enumerate(infos):
-                if finish_step[i] is not None:
+                if finish_step[i] is not None or freeze[i] > 0:
                     continue
                 st = state_of(i)
                 fell = (float(st.base_pos[0, 2]) < fall_h
@@ -150,6 +166,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
                     cp_idx[i] = 0
                     prev_action[i] = torch.zeros(1, robot.action_dim)
                     respawns[i] += 1
+                    freeze[i] = freeze_steps
                     continue
                 _, dist, _ = checkpoint_geometry(st, checkpoints, torch.tensor([cp_idx[i]]))
                 new_idx, _, fin = advance_checkpoints(dist, torch.tensor([cp_idx[i]]), radius, n_cp)
@@ -157,10 +174,6 @@ def head_to_head(actors, cfg, robot, max_steps, dt, render_size=(720, 1280)):
                 if bool(fin.item()):
                     finish_step[i] = step + 1
 
-            # follow the pack: camera looks at the mean base position
-            bases = np.array([data.qpos[info.base_qposadr:info.base_qposadr + 2] for info in infos])
-            cam.lookat = np.array([bases[:, 0].mean(), bases[:, 1].mean(), 0.3])
-            cam.azimuth, cam.elevation, cam.distance = 50, -25, 7.0
             renderer.update_scene(data, camera=cam)
             frames.append(renderer.render())
 
@@ -178,6 +191,8 @@ def main():
     p.add_argument("--agents", nargs=2, required=True, metavar=("A", "B"))
     p.add_argument("--names", nargs=2, default=["agent_a", "agent_b"])
     p.add_argument("--max-steps", type=int, default=4000)
+    p.add_argument("--respawn-wait", type=float, default=1.5,
+                   help="seconds a fallen robot must wait at the start before resuming")
     p.add_argument("--out", default="results/race.json")
     p.add_argument("--video", default="videos/race.mp4")
     p.add_argument("--no-video", action="store_true")
@@ -186,18 +201,21 @@ def main():
     agents = [load_agent(pth, args.track, args.level) for pth in args.agents]
     robot = agents[0][2]
     dt = 0.002 * getattr(agents[0][1].env, "frame_skip", 10)
+    freeze_steps = int(round(args.respawn_wait / dt))
 
-    print(f"=== Track: {args.track} (level {args.level}) | dt={dt:.3f}s ===\n-- time trials --")
+    print(f"=== Track: {args.track} (level {args.level}) | dt={dt:.3f}s | "
+          f"respawn wait {args.respawn_wait}s ===\n-- time trials --")
     trials = {}
     for name, (actor, cfg, rob) in zip(args.names, agents):
-        t, cps, r = time_trial(actor, cfg, rob, args.max_steps, dt)
+        t, cps, r = time_trial(actor, cfg, rob, args.max_steps, dt, freeze_steps)
         trials[name] = {"time_s": t, "checkpoints": cps, "respawns": r, "finished": t is not None}
         print(f"  {name}: {'DNF' if t is None else f'{t:.2f}s'}  "
               f"({cps} checkpoints, {r} respawns)")
 
     print("\n-- head-to-head --")
     actors = [a[0] for a in agents]
-    times, cps, resp, frames = head_to_head(actors, agents[0][1], robot, args.max_steps, dt)
+    times, cps, resp, frames = head_to_head(
+        actors, agents[0][1], robot, args.max_steps, dt, freeze_steps)
     h2h = {}
     for name, t, c, r in zip(args.names, times, cps, resp):
         h2h[name] = {"time_s": t, "checkpoints": c, "respawns": r, "finished": t is not None}
