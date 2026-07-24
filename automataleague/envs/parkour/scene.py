@@ -51,6 +51,7 @@ class SceneInfo:
     base_qposadr: int            # qpos address of the free joint (base pose)
     base_dofadr: int             # dof address of the free joint (base velocity)
     home_qpos: np.ndarray        # full model qpos for the home stance at spawn
+    obstacle_dr: dict | None = None   # per-world mocap obstacle DR (see _resolve_dr)
 
 
 def _yaw_quat(yaw: float) -> list[float]:
@@ -161,6 +162,56 @@ def _add_lights(spec: mujoco.MjSpec, centerline: np.ndarray) -> None:
     )
 
 
+def _resolve_dr(model: mujoco.MjModel, dr_raw: list) -> dict | None:
+    """Flatten obstacle DR descriptors into per-world arrays keyed by mocap index.
+
+    One sampled factor per obstacle (group) scales all its bodies. Two body modes:
+      * height — box top set via mocap_pos.z = h_nom * factor - H
+      * angle  — slab tilt set via mocap_quat at angle = base_angle * factor, with z
+                 recomputed for ground/top contact (cz_mode 0/1).
+    """
+    if not dr_raw:
+        return None
+
+    def mocapid(name):
+        return int(model.body_mocapid[
+            mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)])
+
+    H = {"mocap_idx": [], "h_nom": [], "group": []}
+    A = {"mocap_idx": [], "group": [], "base_angle": [], "axis": [], "yaw": [],
+         "half": [], "cz_mode": [], "top_z": []}
+    for gi, obst in enumerate(dr_raw):
+        for b in obst["bodies"]:
+            if b["mode"] == "height":
+                H["mocap_idx"].append(mocapid(b["body"]))
+                H["h_nom"].append(b["h_nom"]); H["group"].append(gi)
+            else:
+                A["mocap_idx"].append(mocapid(b["body"])); A["group"].append(gi)
+                A["base_angle"].append(b["base_angle"]); A["axis"].append(b["axis"])
+                A["yaw"].append(b["yaw"]); A["half"].append(b["half"])
+                A["cz_mode"].append(b["cz_mode"]); A["top_z"].append(b["top_z"])
+
+    out = {"n_groups": len(dr_raw), "H": float(_DR_H_FROM(dr_raw)),
+           "names": [obst["name"] for obst in dr_raw]}
+    out["height"] = None if not H["mocap_idx"] else dict(
+        mocap_idx=np.array(H["mocap_idx"], np.int64),
+        h_nom=np.array(H["h_nom"], np.float32), group=np.array(H["group"], np.int64))
+    out["angle"] = None if not A["mocap_idx"] else dict(
+        mocap_idx=np.array(A["mocap_idx"], np.int64), group=np.array(A["group"], np.int64),
+        base_angle=np.array(A["base_angle"], np.float32), axis=np.array(A["axis"], np.float32),
+        yaw=np.array(A["yaw"], np.float32), half=np.array(A["half"], np.float32),
+        cz_mode=np.array(A["cz_mode"], np.int64), top_z=np.array(A["top_z"], np.float32))
+    return out
+
+
+def _DR_H_FROM(dr_raw):
+    for obst in dr_raw:
+        for b in obst["bodies"]:
+            if b["mode"] == "height":
+                return b["H"]
+    return 0.8
+
+
 def build_parkour_model(
     robot: str | RobotSpec = "spot",
     cfg: ParkourConfig | None = None,
@@ -184,7 +235,7 @@ def build_parkour_model(
 
     _add_checker_floor(spec, track.centerline, cfg.half_width + 1.5)
     _add_track_paint(spec, track, cfg, checkpoints)
-    add_obstacles(spec, track.centerline, cfg)      # Stage-1 physical terrain
+    dr_raw = add_obstacles(spec, track.centerline, cfg)   # Stage-1 physical terrain
     _add_lights(spec, track.centerline)
 
     prefix = f"{robot_spec.name}/"
@@ -194,6 +245,7 @@ def build_parkour_model(
 
     model = spec.compile()
     info = _resolve_scene_info(model, robot_spec, cfg, track, checkpoints, prefix)
+    info.obstacle_dr = _resolve_dr(model, dr_raw)
     return model, info
 
 

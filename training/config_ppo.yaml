@@ -12,6 +12,15 @@ env:
     length: 9.0
     half_width: 1.6
     level_difficulty: 0   # Stage-1 obstacles: 0=flat, 1..4 harder
+    height_scan: false    # append 12-point forward terrain scan to the obs (obs 49->61)
+    randomize_obstacles: false   # per-episode obstacle DR ~ U(dr_low,dr_high)*level (eval=1.0)
+    dr_low: 0.5
+    dr_high: 1.5
+    # action range: q_target = home + action_scale*action. null => robot default (0.3).
+    # Max foot lift by scale: 0.3->0.15m, 0.5->0.28m, 0.7->0.40m, 0.79->0.45m.
+    # Raise with the level so the foot can clear the taller obstacles:
+    #   L1: 0.30 | L2: 0.50 | L3: 0.70 | L4: ~0.79
+    action_scale: null
 
   # Forward-velocity is the dense locomotion driver (makes moving beat standing);
   # progress adds goal shaping; success/checkpoint are the big goal bonuses.
@@ -75,4 +84,5 @@ logger:
   mode: online
   eval_iter: 1_000_000   # eval + video every 1M frames
   video: true
+  video_steps: 4000      # eval-video upper bound; clip ends early at episode done
   log_outcome_breakdown: true

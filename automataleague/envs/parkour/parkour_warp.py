@@ -31,11 +31,34 @@ from automataleague.envs.parkour.navigation import (
     forward_velocity,
     point_to_polyline_distance,
 )
+from automataleague.envs.parkour import height_scan as hs
 from automataleague.envs.parkour.observation import build_observation
 from automataleague.envs.parkour.rewards import compute_reward
 from automataleague.envs.parkour.scene import build_parkour_model
 from automataleague.envs.parkour.state import extract_state
 from automataleague.envs.parkour.termination import compute_termination
+
+
+def _qmul_b(a, b):
+    """Batched Hamilton product of wxyz quaternions (broadcasting trailing dim 4)."""
+    aw, ax, ay, az = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+    bw, bx, by, bz = b[..., 0], b[..., 1], b[..., 2], b[..., 3]
+    return torch.stack([
+        aw * bw - ax * bx - ay * by - az * bz,
+        aw * bx + ax * bw + ay * bz - az * by,
+        aw * by - ax * bz + ay * bw + az * bx,
+        aw * bz + ax * by - ay * bx + az * bw], dim=-1)
+
+
+def _qrot_b(q, v):
+    """Batched rotation of vector v[...,3] by wxyz quaternion q[...,4]."""
+    w, x, y, z = q[..., 0], q[..., 1], q[..., 2], q[..., 3]
+    vx, vy, vz = v[..., 0], v[..., 1], v[..., 2]
+    tx, ty, tz = 2 * (y * vz - z * vy), 2 * (z * vx - x * vz), 2 * (x * vy - y * vx)
+    return torch.stack([
+        vx + w * tx + (y * tz - z * ty),
+        vy + w * ty + (z * tx - x * tz),
+        vz + w * tz + (x * ty - y * tx)], dim=-1)
 
 
 class ParkourEnvWarp(EnvBase):
@@ -81,8 +104,11 @@ class ParkourEnvWarp(EnvBase):
         self._nq = self._mjm.nq
         self._nv = self._mjm.nv
         self._nu = self._mjm.nu
-        self._obs_dim = self.robot.obs_dim
+        self._scan_on = bool(self.cfg.height_scan)
+        self._obs_dim = self.robot.obs_dim + (hs.SCAN_N if self._scan_on else 0)
         self._act_dim = self.robot.action_dim
+        self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
+                              else self.robot.action_scale)
 
         # Device tensors used every step.
         d = self._device
@@ -94,6 +120,13 @@ class ParkourEnvWarp(EnvBase):
         self._act_cols = torch.tensor(self.info.actuator_ids, dtype=torch.long, device=d)
         self._base_qadr = self.info.base_qposadr
         self._joint_qadr = torch.tensor(self.info.joint_qposadr, dtype=torch.long, device=d)
+
+        if self._scan_on:
+            self._setup_height_scan()
+
+        self._dr = None
+        if self.cfg.randomize_obstacles and self.info.obstacle_dr:
+            self._setup_obstacle_dr()
 
         # Per-env task state.
         self.cp_idx = torch.zeros(num_envs, dtype=torch.long, device=d)
@@ -108,6 +141,113 @@ class ParkourEnvWarp(EnvBase):
         self._make_spec()
 
     # ------------------------------------------------------------------ setup
+    def _setup_height_scan(self):
+        """Preallocate the batched raycast buffers for the terrain height scan.
+
+        pnt/vec are torch buffers (updated in place each step) wrapped as zero-copy
+        Warp vec3 arrays [N, K]; mjw.rays fills dist/geomid/normal [N, K]. The ray
+        group mask includes only geom group 0 (floor + obstacles), so rays pass
+        through the robot's own geoms (groups 2-3).
+        """
+        from mujoco_warp._src.types import vec6f
+
+        d, N, K = self._device, self._num_envs, hs.SCAN_N
+        self._scan_offsets_t = hs.scan_offsets_torch(d)                 # [K, 2]
+        self._scan_pnt = torch.zeros(N, K, 3, device=d)
+        self._scan_pnt[:, :, 2] = hs._RAY_H                            # cast from above
+        self._scan_vec = torch.zeros(N, K, 3, device=d)
+        self._scan_vec[:, :, 2] = -1.0                                # straight down
+        self._scan_pnt_wp = wp.from_torch(self._scan_pnt, dtype=wp.vec3f)
+        self._scan_vec_wp = wp.from_torch(self._scan_vec, dtype=wp.vec3f)
+        self._scan_dist = wp.zeros((N, K), dtype=wp.float32, device=str(d))
+        self._scan_geomid = wp.zeros((N, K), dtype=wp.int32, device=str(d))
+        self._scan_normal = wp.zeros((N, K), dtype=wp.vec3f, device=str(d))
+        self._scan_group = vec6f(1.0, 0.0, 0.0, 0.0, 0.0, 0.0)         # group 0 only
+        self._scan_bodyexclude = wp.full((N,), -1, dtype=wp.int32, device=str(d))
+
+    def _setup_obstacle_dr(self):
+        """Cache tensors for per-env obstacle domain randomization (height + angle)."""
+        dr, d = self.info.obstacle_dr, self._device
+        self._dr = dict(n_groups=int(dr["n_groups"]), H=float(dr["H"]),
+                        low=float(self.cfg.dr_low), high=float(self.cfg.dr_high),
+                        height=None, angle=None)
+        if dr["height"] is not None:
+            h = dr["height"]
+            self._dr["height"] = dict(
+                idx=torch.tensor(h["mocap_idx"], dtype=torch.long, device=d),
+                h_nom=torch.tensor(h["h_nom"], dtype=torch.float32, device=d),
+                group=torch.tensor(h["group"], dtype=torch.long, device=d))
+        if dr["angle"] is not None:
+            a = dr["angle"]
+            self._dr["angle"] = dict(
+                idx=torch.tensor(a["mocap_idx"], dtype=torch.long, device=d),
+                group=torch.tensor(a["group"], dtype=torch.long, device=d),
+                base_angle=torch.deg2rad(torch.tensor(a["base_angle"], device=d)),
+                axis=torch.tensor(a["axis"], dtype=torch.float32, device=d),
+                yaw=torch.tensor(a["yaw"], dtype=torch.float32, device=d),
+                half=torch.tensor(a["half"], dtype=torch.float32, device=d),
+                cz_mode=torch.tensor(a["cz_mode"], dtype=torch.bool, device=d),
+                top_z=torch.tensor(a["top_z"], dtype=torch.float32, device=d))
+
+    def _angle_pose(self, a, ang):
+        """Batched mocap pose for angle-DR slabs: quats [N,B,4] + contact z [N,B]."""
+        N, B = ang.shape
+        ha = ang * 0.5
+        s, c = torch.sin(ha), torch.cos(ha)
+        axq = torch.cat([c.unsqueeze(-1), a["axis"].unsqueeze(0) * s.unsqueeze(-1)], dim=-1)
+        yh = a["yaw"] * 0.5
+        zeros = torch.zeros_like(yh)
+        yq = torch.stack([torch.cos(yh), zeros, zeros, torch.sin(yh)], dim=-1)  # [B,4]
+        q = _qmul_b(yq.unsqueeze(0).expand(N, B, 4), axq)                       # [N,B,4]
+        hx, hy, hz = a["half"][:, 0], a["half"][:, 1], a["half"][:, 2]
+        corners = []
+        for sx in (-1.0, 1.0):
+            for sy in (-1.0, 1.0):
+                v = torch.stack([sx * hx, sy * hy, hz], -1).unsqueeze(0).expand(N, B, 3)
+                corners.append(_qrot_b(q, v)[..., 2])
+        cz_ground = -torch.stack(corners, -1).min(-1).values                   # low corner on floor
+        vtop = torch.stack([torch.zeros_like(hz), torch.zeros_like(hz), hz], -1)
+        cz_top = a["top_z"].unsqueeze(0) - _qrot_b(q, vtop.unsqueeze(0).expand(N, B, 3))[..., 2]
+        cz = torch.where(a["cz_mode"].unsqueeze(0), cz_top, cz_ground)
+        return q, cz
+
+    def _randomize_obstacles(self, mask):
+        """Draw a per-env difficulty factor per obstacle and write mocap pose.
+
+        One factor ~ U(low, high) per obstacle (shared across its bodies); only reset
+        (masked) envs are updated, so each env keeps its difficulty for the episode.
+        Height bodies move mocap_pos.z; angle bodies rewrite mocap_quat + contact z.
+        """
+        dr, N, d = self._dr, self._num_envs, self._device
+        f = torch.empty(N, dr["n_groups"], device=d).uniform_(dr["low"], dr["high"])
+        m = mask.unsqueeze(1)
+        mp = wp.to_torch(self._mjw_data.mocap_pos)          # [N, nmocap, 3]
+        if dr["height"] is not None:
+            h = dr["height"]
+            z = h["h_nom"] * f[:, h["group"]] - dr["H"]
+            mp[:, h["idx"], 2] = torch.where(m, z, mp[:, h["idx"], 2])
+        if dr["angle"] is not None:
+            a = dr["angle"]
+            q, cz = self._angle_pose(a, a["base_angle"].unsqueeze(0) * f[:, a["group"]])
+            mq = wp.to_torch(self._mjw_data.mocap_quat)     # [N, nmocap, 4]
+            mq[:, a["idx"]] = torch.where(m.unsqueeze(2), q, mq[:, a["idx"]])
+            mp[:, a["idx"], 2] = torch.where(m, cz, mp[:, a["idx"], 2])
+
+    def _compute_scan(self, st):
+        """Batched forward terrain scan [N, SCAN_N], relative to each robot's feet."""
+        base_xy, base_z = st.base_pos[:, :2], st.base_pos[:, 2]
+        yaw = hs.yaw_from_quat_torch(st.base_quat)
+        query = hs.world_query_points_torch(base_xy, yaw, self._scan_offsets_t)
+        self._scan_pnt[:, :, 0:2] = query                              # in place -> wp view
+        torch.cuda.synchronize()                                       # torch write visible to warp
+        mjw.rays(self._mjw_model, self._mjw_data, self._scan_pnt_wp, self._scan_vec_wp,
+                 self._scan_group, True, self._scan_bodyexclude,
+                 self._scan_dist, self._scan_geomid, self._scan_normal)
+        wp.synchronize()
+        dist_t = wp.to_torch(self._scan_dist)                          # [N, K]
+        terrain_z = torch.where(dist_t >= 0, hs._RAY_H - dist_t, torch.zeros_like(dist_t))
+        return hs.scan_relative_torch(terrain_z, base_z, self.robot.nominal_height)
+
     def _capture_cuda_graph(self):
         mjw.step(self._mjw_model, self._mjw_data)
         wp.synchronize()
@@ -146,7 +286,7 @@ class ParkourEnvWarp(EnvBase):
         return qpos, qvel
 
     def _write_ctrl(self, actions: torch.Tensor):
-        target = self._home_joint.unsqueeze(0) + self.robot.action_scale * actions
+        target = self._home_joint.unsqueeze(0) + self._action_scale * actions
         ctrl = wp.to_torch(self._mjw_data.ctrl)   # [N, nu]
         ctrl[:, self._act_cols] = target
 
@@ -170,6 +310,8 @@ class ParkourEnvWarp(EnvBase):
         self.cp_idx[mask] = 0
         self.step_count[mask] = 0
         self.prev_action[mask] = 0.0
+        if self._dr is not None:
+            self._randomize_obstacles(mask)
 
     # ------------------------------------------------------------------- step
     def _step(self, td: TensorDictBase) -> TensorDictBase:
@@ -210,8 +352,10 @@ class ParkourEnvWarp(EnvBase):
         st_after = extract_state(*self._get_state_tensors(), self.info)
         to_cp, dist_after, herr = checkpoint_geometry(st_after, self._checkpoints, self.cp_idx)
         self.prev_dist = dist_after
+        scan = self._compute_scan(st_after) if self._scan_on else None
         obs = build_observation(
-            st_after, to_cp, dist_after, herr, self.prev_action, self._home_joint
+            st_after, to_cp, dist_after, herr, self.prev_action, self._home_joint,
+            height_scan=scan,
         )
 
         return TensorDict(
@@ -239,7 +383,9 @@ class ParkourEnvWarp(EnvBase):
         st = extract_state(*self._get_state_tensors(), self.info)
         to_cp, dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
         self.prev_dist = dist
-        obs = build_observation(st, to_cp, dist, herr, self.prev_action, self._home_joint)
+        scan = self._compute_scan(st) if self._scan_on else None
+        obs = build_observation(st, to_cp, dist, herr, self.prev_action, self._home_joint,
+                                height_scan=scan)
 
         return TensorDict(
             {

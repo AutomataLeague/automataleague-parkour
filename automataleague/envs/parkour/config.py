@@ -23,6 +23,25 @@ class ParkourConfig:
     # heights / ramp & incline angles for a difficulty curriculum. ---
     level_difficulty: int = 0
 
+    # --- perception (see height_scan.py). When True, append a 12-point forward
+    # terrain height scan to the observation (obs_dim += SCAN_N). Lets the policy
+    # anticipate obstacles instead of feeling them only on contact. ---
+    height_scan: bool = False
+
+    # --- obstacle domain randomization (mocap-based, see obstacles.py). When True,
+    # each episode draws a per-env difficulty factor ~ U(dr_low, dr_high) per DR
+    # obstacle, with level_difficulty's value as the mean. Eval keeps factor = 1.
+    randomize_obstacles: bool = False
+    dr_low: float = 0.5
+    dr_high: float = 1.5
+
+    # --- action range: q_target = home + action_scale * action (action in [-1,1]).
+    # None => use the robot's default (Spot 0.3). Larger scale = more foot lift, needed
+    # for taller obstacles. Max foot lift by scale (measured): 0.3->0.15m, 0.5->0.28m,
+    # 0.7->0.40m, 0.79(hip-splay limit)->0.45m. Recommended per-level schedule:
+    #   L1: 0.30 (clears 0.11m) | L2: 0.50 (0.22m) | L3: 0.70 (0.34m) | L4: ~0.79 (0.45m)
+    action_scale: float | None = None
+
     # --- path geometry (metres) ---
     half_width: float = 1.6      # path half-width; boundary lines at ±half_width from the
                                  # centerline. Also the off-path tolerance: perpendicular

@@ -52,7 +52,8 @@ def _configs_from_cfg(cfg):
     course = ParkourConfig()
     if hasattr(cfg.env, "course"):
         for k in ("track", "length", "half_width", "checkpoint_spacing",
-                  "finish_offset", "level_difficulty"):
+                  "finish_offset", "level_difficulty", "height_scan",
+                  "randomize_obstacles", "dr_low", "dr_high", "action_scale"):
             if hasattr(cfg.env.course, k):
                 setattr(course, k, getattr(cfg.env.course, k))
 
@@ -71,12 +72,18 @@ def _configs_from_cfg(cfg):
     return course, rc, tc
 
 
-def env_maker(cfg, num_envs=None):
-    """Create a ParkourEnvWarp (already a TorchRL EnvBase)."""
+def env_maker(cfg, num_envs=None, eval_mode=False):
+    """Create a ParkourEnvWarp (already a TorchRL EnvBase).
+
+    eval_mode forces obstacle DR off, so eval measures the clean nominal difficulty
+    (factor 1.0) — the comparable, official course — while training randomizes.
+    """
     from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp
 
     device = cfg.network.device or "cuda"
     course, rc, tc = _configs_from_cfg(cfg)
+    if eval_mode:
+        course.randomize_obstacles = False
     return ParkourEnvWarp(
         robot=cfg.env.robot,
         num_envs=num_envs if num_envs is not None else cfg.env.num_envs,
@@ -103,13 +110,19 @@ def make_environment(cfg):
     """Make train and eval environments."""
     train_env = env_maker(cfg)
     train_env = apply_env_transforms(train_env, cfg.env.max_episode_steps)
-    eval_env = env_maker(cfg, num_envs=1)
+    eval_env = env_maker(cfg, num_envs=1, eval_mode=True)   # eval on the clean nominal course
     eval_env = apply_env_transforms(eval_env, cfg.env.max_episode_steps)
     return train_env, eval_env
 
 
-def rollout_video(policy, cfg, max_steps=None, policy_device="cuda", render_size=(480, 854)):
-    """Roll the deterministic policy on a single CPU env and return frames [T,H,W,3]."""
+def rollout_video(policy, cfg, max_steps=None, policy_device="cuda", render_size=(480, 854),
+                  stop_at_done=True):
+    """Roll the deterministic policy on a single CPU env and return frames [T,H,W,3].
+
+    With stop_at_done (default), the video ends at the episode's natural conclusion
+    (finish / fall / off-path), so a completing policy yields a full-lap clip that
+    isn't chopped mid-course by the step cap. `max_steps` is then just an upper bound.
+    """
     from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU
 
     course, rc, tc = _configs_from_cfg(cfg)
@@ -132,6 +145,8 @@ def rollout_video(policy, cfg, max_steps=None, policy_device="cuda", render_size
             obs, _, term, trunc, _ = env.step(action)
             frames.append(env.render())
             if term or trunc:
+                if stop_at_done:
+                    break
                 obs = env.reset()
     return np.stack(frames)
 

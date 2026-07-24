@@ -22,6 +22,7 @@ import torch  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402
 from torchrl.data import Bounded, Composite, Unbounded  # noqa: E402
 
+from automataleague.envs.parkour import height_scan as hs  # noqa: E402
 from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU  # noqa: E402
 from automataleague.envs.parkour.render import (  # noqa: E402
     CAMERAS,
@@ -37,10 +38,14 @@ def _build_actor(cfg, robot, device):
     class _Stub:
         pass
 
+    # obs grows by SCAN_N when the checkpoint was trained with the height scan.
+    scan_on = bool(getattr(getattr(cfg.env, "course", object()), "height_scan", False))
+    obs_dim = robot.obs_dim + (hs.SCAN_N if scan_on else 0)
+
     stub = _Stub()
     stub.batch_size = torch.Size([1])
     stub.observation_spec = Composite(
-        observation=Unbounded(shape=(1, robot.obs_dim), device=device), shape=(1,)
+        observation=Unbounded(shape=(1, obs_dim), device=device), shape=(1,)
     )
     stub.action_spec = Composite(
         action=Bounded(

@@ -35,6 +35,7 @@ from automataleague.envs.parkour.navigation import (  # noqa: E402
     advance_checkpoints,
     checkpoint_geometry,
 )
+from automataleague.envs.parkour import height_scan as hs  # noqa: E402
 from automataleague.envs.parkour.observation import build_observation  # noqa: E402
 from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU  # noqa: E402
 from automataleague.envs.parkour.scene import build_race_model  # noqa: E402
@@ -61,6 +62,21 @@ def load_agent(path, track, level):
 def _policy_action(actor, obs):
     td = actor(TensorDict({"observation": obs}, batch_size=[1]))
     return td["action"].squeeze(0).numpy()
+
+
+def _robot_scan(model, data, st, robot):
+    """Terrain height scan [1, SCAN_N] for one robot in a shared (multi-robot) scene.
+
+    Rays are filtered to geom group 0 (floor + obstacles), so they pass through BOTH
+    robots' bodies (groups 2-3) and read the terrain beneath — same signal as training.
+    """
+    base_xy = st.base_pos[0, :2].numpy()
+    base_z = float(st.base_pos[0, 2])
+    yaw = float(hs.yaw_from_quat_torch(st.base_quat)[0])
+    query = hs.world_query_points(base_xy, yaw, hs.scan_offsets())
+    terrain_z, _ = hs.cpu_terrain_heights(model, data, query)
+    rel = hs.scan_relative(terrain_z, base_z, robot.nominal_height)
+    return torch.as_tensor(rel, dtype=torch.float32).unsqueeze(0)
 
 
 def _respawn(data, info, robot):
@@ -98,8 +114,15 @@ def time_trial(actor, cfg, robot, max_steps, dt, freeze_steps):
     return None, int(env.cp_idx.item()), respawns
 
 
-def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, render_size=(720, 1280)):
-    """Race all agents together in one scene. Returns finish times + frames."""
+def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=None,
+                 render_size=(720, 1280)):
+    """Race all agents together in one scene. Returns finish times + frames.
+
+    scan_flags[i] toggles the height-scan observation for agent i (a sensored policy
+    needs it; a blind one must not get it). Defaults to all-off.
+    """
+    if scan_flags is None:
+        scan_flags = [False] * len(actors)
     course, _, tc = _configs_from_cfg(cfg)
     fall_h, max_tilt = tc.fall_height, math.radians(tc.max_tilt_deg)
     model, infos = build_race_model(cfg.env.robot, course, n=len(actors))
@@ -146,7 +169,9 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, render_size=(7
                     continue
                 st = state_of(i)
                 to_cp, dist, herr = checkpoint_geometry(st, checkpoints, torch.tensor([cp_idx[i]]))
-                obs = build_observation(st, to_cp, dist, herr, prev_action[i], home_joint)
+                scan = _robot_scan(model, data, st, robot) if scan_flags[i] else None
+                obs = build_observation(st, to_cp, dist, herr, prev_action[i], home_joint,
+                                        height_scan=scan)
                 action = _policy_action(actor, obs)
                 data.ctrl[info.actuator_ids] = ctrl0 + scale * action
                 prev_action[i] = torch.as_tensor(action, dtype=torch.float32)[None]
@@ -214,8 +239,9 @@ def main():
 
     print("\n-- head-to-head --")
     actors = [a[0] for a in agents]
+    scan_flags = [bool(getattr(a[1].env.course, "height_scan", False)) for a in agents]
     times, cps, resp, frames = head_to_head(
-        actors, agents[0][1], robot, args.max_steps, dt, freeze_steps)
+        actors, agents[0][1], robot, args.max_steps, dt, freeze_steps, scan_flags=scan_flags)
     h2h = {}
     for name, t, c, r in zip(args.names, times, cps, resp):
         h2h[name] = {"time_s": t, "checkpoints": c, "respawns": r, "finished": t is not None}

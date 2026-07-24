@@ -21,6 +21,7 @@ from automataleague.envs.parkour.navigation import (
     forward_velocity,
     point_to_polyline_distance,
 )
+from automataleague.envs.parkour import height_scan as hs
 from automataleague.envs.parkour.observation import build_observation
 from automataleague.envs.parkour.rewards import compute_reward
 from automataleague.envs.parkour.scene import build_parkour_model
@@ -44,6 +45,9 @@ class ParkourEnvCPU:
         self._home_joint = torch.tensor(self.robot.home_joint_qpos, dtype=torch.float32)
         self._act_ids = np.asarray(self.info.actuator_ids)
         self._ctrl0 = np.asarray(self.robot.home_joint_qpos, dtype=np.float64)
+        self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
+                              else self.robot.action_scale)
+        self._scan_offsets = hs.scan_offsets() if self.cfg.height_scan else None
 
         self._renderer = None
         self._render_size = render_size
@@ -54,10 +58,25 @@ class ParkourEnvCPU:
         qvel = torch.tensor(self.data.qvel, dtype=torch.float32).unsqueeze(0)
         return extract_state(qpos, qvel, self.info)
 
+    def _scan(self):
+        """12-point terrain height scan (relative to foot level) as a [1, SCAN_N] tensor."""
+        if self._scan_offsets is None:
+            return None
+        ba = self.info.base_qposadr
+        base_xy = self.data.qpos[ba:ba + 2]
+        base_z = float(self.data.qpos[ba + 2])
+        w, x, y, z = self.data.qpos[ba + 3:ba + 7]
+        yaw = np.arctan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
+        query = hs.world_query_points(base_xy, yaw, self._scan_offsets)
+        terrain_z, _ = hs.cpu_terrain_heights(self.model, self.data, query)
+        rel = hs.scan_relative(terrain_z, base_z, self.robot.nominal_height)
+        return torch.tensor(rel, dtype=torch.float32).unsqueeze(0)
+
     def _obs(self):
         st = self._state()
         to_cp, dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
-        return build_observation(st, to_cp, dist, herr, self.prev_action, self._home_joint)
+        return build_observation(st, to_cp, dist, herr, self.prev_action,
+                                 self._home_joint, height_scan=self._scan())
 
     def reset(self):
         self.data.qpos[:] = self.info.home_qpos
@@ -72,7 +91,7 @@ class ParkourEnvCPU:
 
     def step(self, action):
         action = np.clip(np.asarray(action, dtype=np.float64), -1.0, 1.0)
-        target = self._ctrl0 + self.robot.action_scale * action
+        target = self._ctrl0 + self._action_scale * action
         self.data.ctrl[self._act_ids] = target
         for _ in range(self.frame_skip):
             mujoco.mj_step(self.model, self.data)

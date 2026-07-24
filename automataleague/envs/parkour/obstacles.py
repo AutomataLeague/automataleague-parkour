@@ -116,110 +116,169 @@ def _straight_positions(centerline: np.ndarray, n: int, start_clear: float = 8.0
 # gap the robot could crawl under; the floor plane hides the buried part.
 _SLAB_T = 0.6
 
+# Domain-randomizable obstacles are built on MOCAP bodies: a fixed tall box whose
+# exposed height above the floor is set per-env at reset via mocap_pos.z. The box
+# half-height is generous so its base always stays below the floor across the DR
+# range (max exposed ~= stair_h(L4) * 4 * dr_high ~= 0.67 m < _DR_H).
+_DR_H = 0.8
+
+
+def _mocap_box(spec, body_name, geoms, world_xy, yaw, h_nom):
+    """Add a kinematic (mocap) body holding one or more tall boxes (HEIGHT DR).
+
+    The body sits at z = h_nom - _DR_H so that, at the nominal mocap_pos, each box's
+    top is at h_nom above the floor. Per-env DR shifts mocap_pos.z at reset. Returns
+    the per-body DR record {mode, body, h_nom, H}.
+    `geoms` is a list of (name, (local_fwd, local_lat), half_x, half_y, rgba).
+    """
+    body = spec.worldbody.add_body(name=body_name)
+    body.mocap = True
+    body.pos = [float(world_xy[0]), float(world_xy[1]), h_nom - _DR_H]
+    body.quat = _yaw_quat(yaw)
+    for gname, (lf, ll), hx, hy, rgba in geoms:
+        body.add_geom(
+            name=gname, type=mujoco.mjtGeom.mjGEOM_BOX, size=[hx, hy, _DR_H],
+            pos=[lf, ll, 0.0], rgba=rgba,             # local (x=path-forward, y=lateral)
+        )
+    return {"mode": "height", "body": body_name, "h_nom": float(h_nom), "H": _DR_H}
+
+
+def _mocap_slab(spec, body_name, world_xy, yaw, axis, angle_deg, half, cz_mode, top_z, rgba):
+    """Add a tilted slab on a mocap body for ANGLE DR.
+
+    The tilt lives in the body's quat (the geom is axis-aligned inside it), so per-env
+    DR rewrites mocap_quat at reset and recomputes z for contact. Built at the nominal
+    angle, so factor 1 reproduces the current geometry. cz_mode: "ground" sits the
+    slab's low edge on the floor (ramps); "top" pins the top face at ``top_z`` (banks).
+    """
+    q = _qmul(_yaw_quat(yaw), _axis_quat(axis, angle_deg))
+    cz = _cz_ground(half, q) if cz_mode == "ground" else top_z - _qrot(q, (0.0, 0.0, half[2]))[2]
+    body = spec.worldbody.add_body(name=body_name)
+    body.mocap = True
+    body.pos = [float(world_xy[0]), float(world_xy[1]), cz]
+    body.quat = q
+    body.add_geom(name=f"{body_name}_g", type=mujoco.mjtGeom.mjGEOM_BOX,
+                  size=list(half), pos=[0.0, 0.0, 0.0], rgba=rgba)
+    return {"mode": "angle", "body": body_name, "yaw": float(yaw), "axis": list(axis),
+            "base_angle": float(angle_deg), "half": [float(h) for h in half],
+            "cz_mode": 0 if cz_mode == "ground" else 1, "top_z": float(top_z)}
+
 
 def _add_paving(spec, name, pos, yaw, hw, p):
-    """A field of small uneven paving stones (cobbles) across the path."""
+    """A field of small uneven paving stones (cobbles) across the path.
+
+    Stones are grouped by their jitter height into a few mocap bodies (one per level),
+    so a single DR factor scales the whole cobble field's roughness coherently.
+    """
     jitter = p["paving_h"]
     if jitter <= 0:
-        return
+        return None
     cell = 0.35
-    fwd = np.array([math.cos(yaw), math.sin(yaw)])
-    lat = np.array([-math.sin(yaw), math.cos(yaw)])
     n_fwd, n_lat = 12, max(2, int(2 * hw / cell))       # longer paving field
+    levels = {}                                          # h_nom -> [(name, (fwd, lat), rgba)]
     for i in range(n_fwd):
         for j in range(n_lat):
             fo = (i - (n_fwd - 1) / 2) * cell
             lo = (j - (n_lat - 1) / 2) * cell
-            c = np.array(pos) + fwd * fo + lat * lo
             h = 0.03 + ((i * 7 + j * 13) % 5) / 4.0 * jitter    # deterministic jitter
-            spec.worldbody.add_geom(
-                name=f"{name}_{i}_{j}", type=mujoco.mjtGeom.mjGEOM_BOX,
-                size=[cell / 2 * 0.92, cell / 2 * 0.92, h / 2],
-                pos=[float(c[0]), float(c[1]), h / 2], quat=_yaw_quat(yaw),
-                rgba=_OBST if (i + j) % 2 else _OBST2,
-            )
+            levels.setdefault(round(h, 5), []).append(
+                (f"{name}_{i}_{j}", (fo, lo), _OBST if (i + j) % 2 else _OBST2))
+    bodies = []
+    for gi, (h_nom, stones) in enumerate(sorted(levels.items())):
+        geoms = [(gn, off, cell / 2 * 0.92, cell / 2 * 0.92, rgba) for gn, off, rgba in stones]
+        bodies.append(_mocap_box(spec, f"{name}_g{gi}", geoms, pos, yaw, h_nom))
+    return {"name": name, "bodies": bodies}
 
 
 def _add_hurdle(spec, name, pos, yaw, hw, p):
-    """A row of low bars across the path to step over (a simple early obstacle)."""
+    """A row of low bars across the path to step over (a simple early obstacle).
+
+    All four bars share one mocap body (uniform height), DR-scaled together.
+    """
     h = p["hurdle_h"]
     if h <= 0:
-        return
+        return None
     bar_t = 0.14
-    fwd = np.array([math.cos(yaw), math.sin(yaw)])
-    for k, off in enumerate((-1.05, -0.35, 0.35, 1.05)):   # four hurdles
-        c = np.array(pos) + fwd * off
-        spec.worldbody.add_geom(
-            name=f"{name}_{k}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=[bar_t / 2, hw, h / 2], pos=[float(c[0]), float(c[1]), h / 2],
-            quat=_yaw_quat(yaw), rgba=_OBST,
-        )
+    geoms = [(f"{name}_{k}", (off, 0.0), bar_t / 2, hw, _OBST)
+             for k, off in enumerate((-1.05, -0.35, 0.35, 1.05))]
+    rec = _mocap_box(spec, f"{name}_body", geoms, pos, yaw, h)
+    return {"name": name, "bodies": [rec]}
 
 
 def _add_staircase(spec, name, pos, yaw, hw, p):
-    """Longer staircase: several steps up to a top platform, then back down."""
+    """Longer staircase: several steps up to a top platform, then back down.
+
+    Each step is its own mocap body so a per-env DR factor scales the whole
+    step-rise profile coherently (not just truncating the tall steps).
+    """
     h = p["stair_h"]
     if h <= 0:
-        return
+        return None
     tread = 0.5
     heights = [1, 2, 3, 4, 4, 4, 4, 3, 2, 1]           # longer: up, top plateau, down
     fwd = np.array([math.cos(yaw), math.sin(yaw)])
     start = np.array(pos) - fwd * (tread * len(heights) / 2)
+    bodies = []
     for k, mult in enumerate(heights):
         c = start + fwd * (tread * (k + 0.5))
-        z = h * mult
-        spec.worldbody.add_geom(
-            name=f"{name}_{k}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=[tread / 2, hw, z / 2], pos=[float(c[0]), float(c[1]), z / 2],
-            quat=_yaw_quat(yaw), rgba=_OBST if k % 2 else _OBST2,
-        )
+        geoms = [(f"{name}_{k}", (0.0, 0.0), tread / 2, hw, _OBST if k % 2 else _OBST2)]
+        bodies.append(_mocap_box(spec, f"{name}_s{k}", geoms, c, yaw, h * mult))
+    return {"name": name, "bodies": bodies}
 
 
 def _add_side_incline(spec, name, pos, yaw, hw, p):
     """A banked traverse: ramp UP -> banked to one side -> banked to the OPPOSITE side
-    -> ramp DOWN. An off-camber twisting bridge."""
+    -> ramp DOWN. An off-camber twisting bridge.
+
+    The two approach ramps are static (they only carry the robot up to the platform
+    height h); the two BANK slabs are angle-DR mocap bodies (pinned at top_z = h), so
+    the DR factor scales the off-camber tilt — the difficulty of a banked traverse.
+    """
     ang = p["incline_deg"]
     if ang <= 0:
-        return
+        return None
     lp = 1.8                                   # length of each of the 4 pieces (stretched)
     h = 0.22                                   # raised platform height
     theta = math.degrees(math.atan2(h, lp))    # ramp pitch to reach h over lp
     fwd = np.array([math.cos(yaw), math.sin(yaw)])
+    size = [lp / 2, hw, _SLAB_T / 2]
 
-    def slab(tag, foff, axis, tilt_deg, top_z, rgba):
+    def static_slab(tag, foff, tilt_deg, rgba):     # fixed approach ramp (top at h)
         c = np.array(pos) + fwd * foff
-        q = _qmul(_yaw_quat(yaw), _axis_quat(axis, tilt_deg))
-        size = [lp / 2, hw, _SLAB_T / 2]
-        cz = top_z - _qrot(q, (0.0, 0.0, _SLAB_T / 2))[2]   # top-face centre at top_z
+        q = _qmul(_yaw_quat(yaw), _axis_quat([0.0, 1.0, 0.0], tilt_deg))
+        cz = h / 2 - _qrot(q, (0.0, 0.0, _SLAB_T / 2))[2]
         spec.worldbody.add_geom(
             name=f"{name}_{tag}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=size, pos=[float(c[0]), float(c[1]), cz], quat=q, rgba=rgba,
-        )
+            size=size, pos=[float(c[0]), float(c[1]), cz], quat=q, rgba=rgba)
 
-    slab("up",    -1.5 * lp, [0.0, 1.0, 0.0], -theta, h / 2, _OBST)    # ramp up to h
-    slab("bankL", -0.5 * lp, [1.0, 0.0, 0.0], +ang,   h,     _OBST2)   # banked one way
-    slab("bankR", +0.5 * lp, [1.0, 0.0, 0.0], -ang,   h,     _OBST)    # banked the other way
-    slab("down",  +1.5 * lp, [0.0, 1.0, 0.0], +theta, h / 2, _OBST2)   # ramp down
+    static_slab("up",   -1.5 * lp, -theta, _OBST)
+    static_slab("down", +1.5 * lp, +theta, _OBST2)
+    bankL = _mocap_slab(spec, f"{name}_bankL", np.array(pos) + fwd * (-0.5 * lp),
+                        yaw, [1.0, 0.0, 0.0], +ang, size, "top", h, _OBST2)
+    bankR = _mocap_slab(spec, f"{name}_bankR", np.array(pos) + fwd * (+0.5 * lp),
+                        yaw, [1.0, 0.0, 0.0], -ang, size, "top", h, _OBST)
+    return {"name": name, "bodies": [bankL, bankR]}
 
 
 def _add_ramp(spec, name, pos, yaw, hw, p):
-    """A SOLID up-and-over hill: rises from the ground to a peak, then descends."""
+    """A SOLID up-and-over hill: rises from the ground to a peak, then descends.
+
+    Both slopes are angle-DR mocap slabs (ground-contact); the DR factor scales the
+    ramp pitch, so the hill gets steeper/shallower per episode.
+    """
     ang = p["ramp_deg"]
     if ang <= 0:
-        return
+        return None
     run = 2.2                                           # horizontal run of each slope
     fwd = np.array([math.cos(yaw), math.sin(yaw)])
     half = run / 2
-    for sign, tag in ((-1, "up"), (+1, "down")):
+    size = [half, hw, _SLAB_T / 2]
+    bodies = []
+    for sign, tag in ((-1, "up"), (+1, "down")):        # up-slope rises to the peak
         c = np.array(pos) + fwd * (sign * half)
-        # pitch about the box's LOCAL lateral axis; up-slope (sign=-1) rises to the peak.
-        q = _qmul(_yaw_quat(yaw), _axis_quat([0.0, 1.0, 0.0], sign * ang))
-        size = [half, hw, _SLAB_T / 2]
-        cz = _cz_ground(size, q)
-        spec.worldbody.add_geom(
-            name=f"{name}_{tag}", type=mujoco.mjtGeom.mjGEOM_BOX,
-            size=size, pos=[float(c[0]), float(c[1]), cz], quat=q, rgba=_OBST,
-        )
+        bodies.append(_mocap_slab(spec, f"{name}_{tag}", c, yaw, [0.0, 1.0, 0.0],
+                                  sign * ang, size, "ground", 0.0, _OBST))
+    return {"name": name, "bodies": bodies}
 
 
 _BUILDERS = {
@@ -233,15 +292,24 @@ _BUILDERS = {
 _LAYOUT = ["paving", "hurdle", "staircase", "ramp", "side_incline"]
 
 
-def add_obstacles(spec: mujoco.MjSpec, centerline: np.ndarray, cfg) -> None:
-    """Place the features along the track in lap order (banked traverse before finish)."""
+def add_obstacles(spec: mujoco.MjSpec, centerline: np.ndarray, cfg) -> list:
+    """Place the features along the track in lap order (banked traverse before finish).
+
+    Returns a list of domain-randomization descriptors (one per DR-capable obstacle:
+    currently hurdle + staircase), each ``{"name", "bodies": [{body, h_nom, H}, ...]}``.
+    Static features (paving/ramp/banked) return None and are skipped.
+    """
     level = getattr(cfg, "level_difficulty", 0)
     if level <= 0:
-        return
+        return []
     p = difficulty_params(level)
     positions = _straight_positions(centerline, len(_LAYOUT))
     total = float(np.linalg.norm(np.diff(centerline, axis=0), axis=1).sum())
+    dr = []
     for kind, s in zip(_LAYOUT, positions):
         s = min(s, total - 3.6)                 # keep long features clear of the finish
         pos, yaw = _sample_path(centerline, s)
-        _BUILDERS[kind](spec, f"obst_{kind}", pos, yaw, cfg.half_width, p)
+        rec = _BUILDERS[kind](spec, f"obst_{kind}", pos, yaw, cfg.half_width, p)
+        if rec is not None:
+            dr.append(rec)
+    return dr

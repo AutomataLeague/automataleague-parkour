@@ -42,6 +42,24 @@ def aggregate_outcomes(codes):
     return dict(stats)
 
 
+def _pad_obs_input(sd, cur_obs, hidden_sizes=()):
+    """Zero-pad the input-layer weights of a warm-start state_dict to `cur_obs`
+    columns, so a policy trained on a smaller observation (e.g. blind, 49-dim) loads
+    into a sensor-augmented network (e.g. +12 height-scan). Only the first layer
+    (in_features < cur_obs and not a hidden width) is padded; its new trailing
+    columns start at zero, so the warm-started policy initially ignores the sensor
+    and keeps its learned gait. A same-dim checkpoint is loaded unchanged.
+    """
+    skip = {int(h) for h in hidden_sizes}
+    out = {}
+    for k, v in sd.items():
+        if v.dim() == 2 and v.shape[1] < cur_obs and v.shape[1] not in skip:
+            pad = torch.zeros(v.shape[0], cur_obs - v.shape[1], dtype=v.dtype, device=v.device)
+            v = torch.cat([v, pad], dim=1)
+        out[k] = v
+    return out
+
+
 @hydra.main(version_base="1.1", config_path="", config_name="config_ppo")
 def main(cfg: "DictConfig"):  # noqa: F821
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,9 +98,12 @@ def main(cfg: "DictConfig"):  # noqa: F821
     init_ckpt = getattr(cfg.network, "init_checkpoint", None)
     if init_ckpt:
         state = torch.load(init_ckpt, map_location=device, weights_only=False)
-        actor.load_state_dict(state["actor_state_dict"])
-        critic.load_state_dict(state["critic_state_dict"])
-        torchrl_logger.info(f"Warm-started from {init_ckpt}")
+        cur_obs = train_env.observation_spec["observation"].shape[-1]
+        a_sd = _pad_obs_input(state["actor_state_dict"], cur_obs, cfg.network.hidden_sizes)
+        c_sd = _pad_obs_input(state["critic_state_dict"], cur_obs, cfg.network.hidden_sizes)
+        actor.load_state_dict(a_sd)
+        critic.load_state_dict(c_sd)
+        torchrl_logger.info(f"Warm-started from {init_ckpt} (obs padded to {cur_obs})")
 
     adv_module = GAE(
         gamma=cfg.loss.gamma, lmbda=cfg.loss.gae_lambda,
@@ -133,6 +154,9 @@ def main(cfg: "DictConfig"):  # noqa: F821
     losses = TensorDict(batch_size=[ppo_epochs, num_mini_batches])
 
     td = train_env.reset()
+
+    # Track the best eval so late-training collapse never costs us the peak policy.
+    best_score = float("-inf")
 
     while collected_frames < cfg.collector.total_frames:
         collect_start = time.time()
@@ -249,13 +273,34 @@ def main(cfg: "DictConfig"):  # noqa: F821
                     )
                 actor.train()
 
+                # Keep the best policy by eval quality (finish > checkpoints reached >
+                # closeness to finish), since PPO can oscillate / collapse late in training.
+                score = (metrics_to_log.get("eval/reached_finish", 0.0) * 1000.0
+                         + metrics_to_log.get("eval/max_checkpoint", 0.0)
+                         - 0.01 * metrics_to_log.get("eval/final_dist_to_finish", 0.0))
+                if score > best_score:
+                    best_score = score
+                    torch.save({
+                        "actor_state_dict": actor.state_dict(),
+                        "critic_state_dict": critic.state_dict(),
+                        "collected_frames": collected_frames,
+                        "config": dict(cfg),
+                    }, os.path.join(checkpoint_dir, "ppo_best.pt"))
+                    torchrl_logger.info(
+                        f"New best policy (max_checkpoint="
+                        f"{metrics_to_log.get('eval/max_checkpoint')}) -> ppo_best.pt")
+                metrics_to_log["eval/best_score"] = best_score
+
             if cfg.logger.video and cfg.logger.backend:
                 try:
                     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():
                         actor.eval()
+                        # Cap generously and stop at the episode's natural end, so a
+                        # full lap renders in full instead of being chopped at ~30 s.
+                        video_steps = getattr(cfg.logger, "video_steps", 4000)
                         frames = rollout_video(
-                            actor, cfg, max_steps=min(1500, eval_rollout_steps),
-                            policy_device=str(device),
+                            actor, cfg, max_steps=min(video_steps, eval_rollout_steps),
+                            policy_device=str(device), stop_at_done=True,
                         )
                         actor.train()
                         vid = np.transpose(frames, (0, 3, 1, 2)).astype(np.uint8)
