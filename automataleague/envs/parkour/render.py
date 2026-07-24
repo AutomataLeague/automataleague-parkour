@@ -32,21 +32,23 @@ CAMERAS: dict[str, CameraPreset] = {
     # Classic side tracking (corridor runs left-right in frame).
     "side": CameraPreset("side", azimuth=90, elevation=-12, distance=4.0),
     # Over-the-shoulder: behind and above, looking forward down the course.
+    # azimuth=0 (heading-relative) -> camera sits behind the robot looking along its
+    # heading, so the robot runs *away* from the viewer (into the course ahead).
     "over_shoulder": CameraPreset(
-        "over_shoulder", azimuth=180, elevation=-18, distance=2.6,
+        "over_shoulder", azimuth=0, elevation=-18, distance=2.6,
         lookat_offset=(0.6, 0.0, 0.35), heading_relative=True,
     ),
     # Drone: high aerial from directly behind, looking forward (see what's ahead).
-    "drone": CameraPreset("drone", azimuth=180, elevation=-42, distance=6.0,
+    "drone": CameraPreset("drone", azimuth=0, elevation=-42, distance=6.0,
                           lookat_offset=(1.2, 0.0, 0.3), heading_relative=True),
-    # Front: ahead of the robot, looking back at it.
-    "front": CameraPreset("front", azimuth=0, elevation=-12, distance=3.2,
+    # Front: ahead of the robot, looking back at it (azimuth=180 -> camera in front).
+    "front": CameraPreset("front", azimuth=180, elevation=-12, distance=3.2,
                           lookat_offset=(0.3, 0.0, 0.35), heading_relative=True),
     # Low chase from directly behind.
-    "chase": CameraPreset("chase", azimuth=180, elevation=-6, distance=2.8,
+    "chase": CameraPreset("chase", azimuth=0, elevation=-6, distance=2.8,
                           lookat_offset=(0.4, 0.0, 0.35), heading_relative=True),
-    # Top-down, oriented to the robot's heading (forward = up in frame).
-    "top": CameraPreset("top", azimuth=180, elevation=-89, distance=6.5,
+    # Top-down, oriented to the robot's heading (azimuth=0 -> forward = up in frame).
+    "top": CameraPreset("top", azimuth=0, elevation=-89, distance=6.5,
                         heading_relative=True),
 }
 
