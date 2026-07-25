@@ -35,6 +35,12 @@ class ParkourConfig:
     dr_low: float = 0.5
     dr_high: float = 1.5
 
+    # --- race mode: navigate by along-track speed + gate-crossing (no forced dip to
+    # checkpoint centres) so the agent can take the ideal line. Pair with the race
+    # reward preset (progress=0, checkpoint=0, alive<0 time penalty, target_speed high)
+    # to fine-tune a solved obstacle policy for minimal lap time. ---
+    race_mode: bool = False
+
     # --- action range: q_target = home + action_scale * action (action in [-1,1]).
     # None => use the robot's default (Spot 0.3). Larger scale = more foot lift, needed
     # for taller obstacles. Max foot lift by scale (measured): 0.3->0.15m, 0.5->0.28m,

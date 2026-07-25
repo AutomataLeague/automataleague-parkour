@@ -53,7 +53,8 @@ def _configs_from_cfg(cfg):
     if hasattr(cfg.env, "course"):
         for k in ("track", "length", "half_width", "checkpoint_spacing",
                   "finish_offset", "level_difficulty", "height_scan",
-                  "randomize_obstacles", "dr_low", "dr_high", "action_scale"):
+                  "randomize_obstacles", "dr_low", "dr_high", "action_scale",
+                  "race_mode"):
             if hasattr(cfg.env.course, k):
                 setattr(course, k, getattr(cfg.env.course, k))
 

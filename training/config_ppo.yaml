@@ -21,6 +21,12 @@ env:
     # Raise with the level so the foot can clear the taller obstacles:
     #   L1: 0.30 | L2: 0.50 | L3: 0.70 | L4: ~0.79
     action_scale: null
+    # race mode: navigate by along-track speed + gate-crossing (no forced dip to gate
+    # centres) so the agent finds the time-optimal line. Pair with the RACE reward
+    # preset below and warm-start from a solved obstacle policy. Override:
+    #   env.course.race_mode=true env.reward_weights.progress=0 env.reward_weights.checkpoint=0 \
+    #   env.reward_weights.alive=-0.03 env.reward_weights.target_speed=2.5 env.reward_weights.forward=2.0
+    race_mode: false
 
   # Forward-velocity is the dense locomotion driver (makes moving beat standing);
   # progress adds goal shaping; success/checkpoint are the big goal bonuses.

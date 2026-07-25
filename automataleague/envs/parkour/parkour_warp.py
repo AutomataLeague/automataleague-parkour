@@ -27,9 +27,11 @@ from automataleague.envs.parkour.config import (
 )
 from automataleague.envs.parkour.navigation import (
     advance_checkpoints,
+    centerline_frame,
     checkpoint_geometry,
     forward_velocity,
     point_to_polyline_distance,
+    race_nav,
 )
 from automataleague.envs.parkour import height_scan as hs
 from automataleague.envs.parkour.observation import build_observation
@@ -115,6 +117,10 @@ class ParkourEnvWarp(EnvBase):
         self._checkpoints = torch.tensor(self.info.checkpoints_xy, dtype=torch.float32, device=d)
         self._num_cp = self._checkpoints.shape[0]
         self._centerline = torch.tensor(self.info.centerline, dtype=torch.float32, device=d)
+        self._race_mode = bool(self.cfg.race_mode)
+        # gate tangents (track direction at each checkpoint) for race-mode gate crossing
+        self._cp_tangent = (centerline_frame(self._checkpoints, self._centerline)[1]
+                            if self._race_mode else None)
         self._home_joint = torch.tensor(self.robot.home_joint_qpos, dtype=torch.float32, device=d)
         self._home_qpos = torch.tensor(self.info.home_qpos, dtype=torch.float32, device=d)
         self._act_cols = torch.tensor(self.info.actuator_ids, dtype=torch.long, device=d)
@@ -323,12 +329,18 @@ class ParkourEnvWarp(EnvBase):
         self.step_count += 1
 
         st = extract_state(*self._get_state_tensors(), self.info)
-        _, cur_dist, _ = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
-        fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
-        lateral = point_to_polyline_distance(st.base_pos[:, :2], self._centerline)
-        new_idx, inter, fin = advance_checkpoints(
-            cur_dist, self.cp_idx, self.cfg.checkpoint_radius, self._num_cp
-        )
+        if self._race_mode:
+            fwd_vel, lateral, new_idx, inter, fin = race_nav(
+                st.base_pos[:, :2], st.base_linvel_world[:, :2], self._centerline,
+                self._checkpoints, self._cp_tangent, self.cp_idx, self._num_cp)
+            cur_dist = torch.zeros_like(fwd_vel)          # progress term is off in race mode
+        else:
+            _, cur_dist, _ = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
+            fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
+            lateral = point_to_polyline_distance(st.base_pos[:, :2], self._centerline)
+            new_idx, inter, fin = advance_checkpoints(
+                cur_dist, self.cp_idx, self.cfg.checkpoint_radius, self._num_cp
+            )
         terminated, truncated, fell, off, outcome = compute_termination(
             st, self.step_count, fin, lateral, self.cfg.half_width, self.term_cfg
         )

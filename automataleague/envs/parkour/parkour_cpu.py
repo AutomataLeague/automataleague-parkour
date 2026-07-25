@@ -17,9 +17,11 @@ from automataleague.envs.parkour.config import (
 )
 from automataleague.envs.parkour.navigation import (
     advance_checkpoints,
+    centerline_frame,
     checkpoint_geometry,
     forward_velocity,
     point_to_polyline_distance,
+    race_nav,
 )
 from automataleague.envs.parkour import height_scan as hs
 from automataleague.envs.parkour.observation import build_observation
@@ -42,6 +44,9 @@ class ParkourEnvCPU:
 
         self._checkpoints = torch.tensor(self.info.checkpoints_xy, dtype=torch.float32)
         self._centerline = torch.tensor(self.info.centerline, dtype=torch.float32)
+        self._race_mode = bool(self.cfg.race_mode)
+        self._cp_tangent = (centerline_frame(self._checkpoints, self._centerline)[1]
+                            if self._race_mode else None)
         self._home_joint = torch.tensor(self.robot.home_joint_qpos, dtype=torch.float32)
         self._act_ids = np.asarray(self.info.actuator_ids)
         self._ctrl0 = np.asarray(self.robot.home_joint_qpos, dtype=np.float64)
@@ -98,11 +103,17 @@ class ParkourEnvCPU:
         self.step_count += 1
 
         st = self._state()
-        to_cp, cur_dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
-        fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
-        lateral = point_to_polyline_distance(st.base_pos[:, :2], self._centerline)
-        new_idx, inter, fin = advance_checkpoints(
-            cur_dist, self.cp_idx, self.cfg.checkpoint_radius, len(self._checkpoints))
+        if self._race_mode:
+            fwd_vel, lateral, new_idx, inter, fin = race_nav(
+                st.base_pos[:, :2], st.base_linvel_world[:, :2], self._centerline,
+                self._checkpoints, self._cp_tangent, self.cp_idx, len(self._checkpoints))
+            cur_dist = torch.zeros_like(fwd_vel)
+        else:
+            _, cur_dist, _ = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
+            fwd_vel = forward_velocity(st, self._checkpoints, self.cp_idx, cur_dist)
+            lateral = point_to_polyline_distance(st.base_pos[:, :2], self._centerline)
+            new_idx, inter, fin = advance_checkpoints(
+                cur_dist, self.cp_idx, self.cfg.checkpoint_radius, len(self._checkpoints))
         terminated, truncated, fell, off, outcome = compute_termination(
             st, self.step_count, fin, lateral, self.cfg.half_width, self.term_cfg)
         act_t = torch.tensor(action, dtype=torch.float32).unsqueeze(0)
