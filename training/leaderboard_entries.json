@@ -1,0 +1,44 @@
+[
+  {
+    "name": "L2 race-tuned",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_scan_L2_race.pt",
+    "notes": "race-mode fine-tune of L2 (fast finishers ~28.7s but rushes/falls: 3/8)"
+  },
+  {
+    "name": "L2 curriculum",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_scan_L2_dr.pt",
+    "notes": "height-scan + obstacle DR, action_scale 0.7 (solves L2 10/10)"
+  },
+  {
+    "name": "L3 curriculum",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_scan_L3_dr.pt",
+    "notes": "trained one level harder (L3, action_scale 0.7)"
+  },
+  {
+    "name": "L4 curriculum",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_scan_L4_dr.pt",
+    "notes": "trained on the hardest level (L4, action_scale 0.79)"
+  },
+  {
+    "name": "L1 curriculum",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_scan_L1_dr.pt",
+    "notes": "trained only on L1 (action_scale 0.3 — limited foot lift)"
+  },
+  {
+    "name": "flat baseline (blind)",
+    "algorithm": "PPO",
+    "author": "automataleague",
+    "checkpoint": "training/checkpoints/circuit_final.pt",
+    "notes": "no height scan, trained on the flat circuit — no obstacle perception"
+  }
+]
