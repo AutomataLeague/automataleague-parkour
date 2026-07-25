@@ -41,6 +41,10 @@ CAMERAS: dict[str, CameraPreset] = {
     # Drone: high aerial from directly behind, looking forward (see what's ahead).
     "drone": CameraPreset("drone", azimuth=0, elevation=-42, distance=6.0,
                           lookat_offset=(1.2, 0.0, 0.3), heading_relative=True),
+    # Drone 3/4: like drone but swung to the side and a bit lower, so you see the
+    # robot's flank AND the course ahead of it (cinematic follow).
+    "drone_side": CameraPreset("drone_side", azimuth=35, elevation=-30, distance=5.0,
+                               lookat_offset=(1.1, 0.0, 0.35), heading_relative=True),
     # Front: ahead of the robot, looking back at it (azimuth=180 -> camera in front).
     "front": CameraPreset("front", azimuth=180, elevation=-12, distance=3.2,
                           lookat_offset=(0.3, 0.0, 0.35), heading_relative=True),

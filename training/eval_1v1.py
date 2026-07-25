@@ -79,6 +79,28 @@ def _robot_scan(model, data, st, robot):
     return torch.as_tensor(rel, dtype=torch.float32).unsqueeze(0)
 
 
+def _race_camera(cam, mode, infos, data, cl, lookat_ema):
+    """Set the race camera. 'whole_track' = fixed aerial framing the whole lap;
+    'side_follow' = a closer 3/4-high drone that glides with the pack (EMA-smoothed so
+    respawns don't snap it) and only widens as the two robots spread apart."""
+    if mode == "whole_track":
+        lo, hi = cl.min(0), cl.max(0)
+        cam.lookat = np.array([float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.0])
+        cam.azimuth, cam.elevation = 45, -55
+        cam.distance = float(max(hi[0] - lo[0], hi[1] - lo[1])) * 1.7 + 5
+        return lookat_ema
+    pos = np.array([[float(data.qpos[i.base_qposadr]),
+                     float(data.qpos[i.base_qposadr + 1])] for i in infos])
+    mid = pos.mean(0)
+    spread = float(np.linalg.norm(pos.max(0) - pos.min(0))) if len(pos) > 1 else 0.0
+    target = np.array([mid[0], mid[1], 0.4])
+    lookat_ema = target if lookat_ema is None else 0.90 * lookat_ema + 0.10 * target
+    cam.lookat = lookat_ema
+    cam.azimuth, cam.elevation = 50, -28          # 3/4 high side angle
+    cam.distance = float(np.clip(7.0 + 1.3 * spread, 7.0, 15.0))   # close, widen when apart
+    return lookat_ema
+
+
 def _respawn(data, info, robot):
     """Teleport one robot back to its start pose (used when it falls over)."""
     ba, da = info.base_qposadr, info.base_dofadr
@@ -115,14 +137,17 @@ def time_trial(actor, cfg, robot, max_steps, dt, freeze_steps):
 
 
 def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=None,
-                 render_size=(720, 1280)):
+                 scales=None, camera="side_follow", render_size=(720, 1280)):
     """Race all agents together in one scene. Returns finish times + frames.
 
     scan_flags[i] toggles the height-scan observation for agent i (a sensored policy
-    needs it; a blind one must not get it). Defaults to all-off.
+    needs it; a blind one must not get it). scales[i] is agent i's action_scale (so a
+    policy trained at a larger range acts correctly). Both default per robot.
     """
     if scan_flags is None:
         scan_flags = [False] * len(actors)
+    if scales is None:
+        scales = [robot.action_scale] * len(actors)
     course, _, tc = _configs_from_cfg(cfg)
     fall_h, max_tilt = tc.fall_height, math.radians(tc.max_tilt_deg)
     model, infos = build_race_model(cfg.env.robot, course, n=len(actors))
@@ -135,7 +160,6 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=Non
     radius = course.checkpoint_radius
     home_joint = torch.tensor(robot.home_joint_qpos, dtype=torch.float32)
     ctrl0 = np.asarray(robot.home_joint_qpos, dtype=np.float64)
-    scale = robot.action_scale
     fs = getattr(cfg.env, "frame_skip", 10)
 
     cp_idx = [0] * len(actors)
@@ -145,13 +169,9 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=Non
     freeze = [0] * len(actors)                 # respawn wait counter per robot
 
     renderer = mujoco.Renderer(model, height=render_size[0], width=render_size[1])
-    # Fixed camera framing the whole track (never jumps on a respawn).
     cl = infos[0].centerline
-    lo, hi = cl.min(0), cl.max(0)
     cam = mujoco.MjvCamera()
-    cam.lookat = np.array([float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2), 0.0])
-    cam.azimuth, cam.elevation = 45, -55
-    cam.distance = float(max(hi[0] - lo[0], hi[1] - lo[1])) * 1.7 + 5
+    cam_ema = None                    # EMA lookat state for the side-follow camera
     frames = []
 
     def state_of(i):
@@ -173,7 +193,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=Non
                 obs = build_observation(st, to_cp, dist, herr, prev_action[i], home_joint,
                                         height_scan=scan)
                 action = _policy_action(actor, obs)
-                data.ctrl[info.actuator_ids] = ctrl0 + scale * action
+                data.ctrl[info.actuator_ids] = ctrl0 + scales[i] * action
                 prev_action[i] = torch.as_tensor(action, dtype=torch.float32)[None]
 
             for _ in range(fs):
@@ -199,6 +219,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=Non
                 if bool(fin.item()):
                     finish_step[i] = step + 1
 
+            cam_ema = _race_camera(cam, camera, infos, data, cl, cam_ema)
             renderer.update_scene(data, camera=cam)
             frames.append(renderer.render())
 
@@ -218,6 +239,9 @@ def main():
     p.add_argument("--max-steps", type=int, default=4000)
     p.add_argument("--respawn-wait", type=float, default=1.5,
                    help="seconds a fallen robot must wait at the start before resuming")
+    p.add_argument("--camera", default="side_follow",
+                   choices=["side_follow", "whole_track"],
+                   help="race camera: close 3/4 follow (default) or fixed whole-track aerial")
     p.add_argument("--out", default="results/race.json")
     p.add_argument("--video", default="videos/race.mp4")
     p.add_argument("--no-video", action="store_true")
@@ -240,8 +264,11 @@ def main():
     print("\n-- head-to-head --")
     actors = [a[0] for a in agents]
     scan_flags = [bool(getattr(a[1].env.course, "height_scan", False)) for a in agents]
+    scales = [getattr(a[1].env.course, "action_scale", None) or robot.action_scale
+              for a in agents]
     times, cps, resp, frames = head_to_head(
-        actors, agents[0][1], robot, args.max_steps, dt, freeze_steps, scan_flags=scan_flags)
+        actors, agents[0][1], robot, args.max_steps, dt, freeze_steps,
+        scan_flags=scan_flags, scales=scales, camera=args.camera)
     h2h = {}
     for name, t, c, r in zip(args.names, times, cps, resp):
         h2h[name] = {"time_s": t, "checkpoints": c, "respawns": r, "finished": t is not None}
