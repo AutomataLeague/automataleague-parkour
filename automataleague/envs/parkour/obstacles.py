@@ -4,8 +4,10 @@ Obstacles are collidable geoms (the feet actually contact them) built at positio
 along the path, oriented to the local path direction. Magnitudes scale with
 ``ParkourConfig.level_difficulty`` (0 = flat, 4 = hardest) for a difficulty curriculum.
 
-Feature kinds: "step" (raised platform, up + down), "staircase" (a few steps up then
-down), "side_incline" (laterally-tilted crossing), "ramp" (up/down slope along path).
+Feature kinds (see _LAYOUT): "paving" (uneven cobbles), "hurdle" (low bars to step
+over), "staircase" (steps up to a top plateau then down), "ramp" (up-and-over hill),
+"side_incline" (banked off-camber traverse). Height/angle obstacles are mocap bodies
+so their difficulty can be domain-randomized per episode (see scene.py / parkour envs).
 """
 
 from __future__ import annotations

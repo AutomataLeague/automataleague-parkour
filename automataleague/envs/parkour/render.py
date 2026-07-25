@@ -123,19 +123,3 @@ def render_trajectory(model, info, qpos_seq, camera="side", size=(720, 1280)):
         frames.append(renderer.render())
     renderer.close()
     return np.stack(frames)
-
-
-def grid_frames(view_frames: dict[str, np.ndarray]) -> np.ndarray:
-    """Tile multiple synchronized [T,H,W,3] view stacks into a 2-col grid [T,H',W',3]."""
-    names = list(view_frames)
-    stacks = [view_frames[n] for n in names]
-    T = min(s.shape[0] for s in stacks)
-    stacks = [s[:T] for s in stacks]
-    ncol = 2
-    nrow = (len(stacks) + ncol - 1) // ncol
-    h, w = stacks[0].shape[1:3]
-    out = np.zeros((T, nrow * h, ncol * w, 3), dtype=np.uint8)
-    for i, s in enumerate(stacks):
-        r, c = divmod(i, ncol)
-        out[:, r * h:(r + 1) * h, c * w:(c + 1) * w] = s
-    return out
