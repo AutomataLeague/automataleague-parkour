@@ -101,6 +101,18 @@ def _race_camera(cam, mode, infos, data, cl, lookat_ema):
     return lookat_ema
 
 
+def _ensure_offscreen(model, render_size):
+    """Enlarge the model's offscreen framebuffer to fit render_size=(height, width).
+
+    MuJoCo's offscreen buffer is compile-time sized (default fits 1280x720 landscape);
+    rendering taller (a 1080x1920 portrait Short) fails unless the buffer is grown. These
+    vis fields are settable post-compile and read by mujoco.Renderer at construction.
+    """
+    height, width = render_size
+    model.vis.global_.offwidth = max(int(model.vis.global_.offwidth), int(width))
+    model.vis.global_.offheight = max(int(model.vis.global_.offheight), int(height))
+
+
 def _respawn(data, info, robot):
     """Teleport one robot back to its start pose (used when it falls over)."""
     ba, da = info.base_qposadr, info.base_dofadr
@@ -168,6 +180,7 @@ def head_to_head(actors, cfg, robot, max_steps, dt, freeze_steps, scan_flags=Non
     respawns = [0] * len(actors)
     freeze = [0] * len(actors)                 # respawn wait counter per robot
 
+    _ensure_offscreen(model, render_size)
     renderer = mujoco.Renderer(model, height=render_size[0], width=render_size[1])
     cl = infos[0].centerline
     cam = mujoco.MjvCamera()
@@ -242,6 +255,10 @@ def main():
     p.add_argument("--camera", default="side_follow",
                    choices=["side_follow", "whole_track"],
                    help="race camera: close 3/4 follow (default) or fixed whole-track aerial")
+    p.add_argument("--render-size", nargs=2, type=int, default=None,
+                   metavar=("H", "W"),
+                   help="render height width (default 720 1280 landscape; "
+                        "use 1920 1080 for a vertical Short)")
     p.add_argument("--out", default="results/race.json")
     p.add_argument("--video", default="videos/race.mp4")
     p.add_argument("--no-video", action="store_true")
@@ -268,7 +285,8 @@ def main():
               for a in agents]
     times, cps, resp, frames = head_to_head(
         actors, agents[0][1], robot, args.max_steps, dt, freeze_steps,
-        scan_flags=scan_flags, scales=scales, camera=args.camera)
+        scan_flags=scan_flags, scales=scales, camera=args.camera,
+        render_size=tuple(args.render_size) if args.render_size else (720, 1280))
     h2h = {}
     for name, t, c, r in zip(args.names, times, cps, resp):
         h2h[name] = {"time_s": t, "checkpoints": c, "respawns": r, "finished": t is not None}
