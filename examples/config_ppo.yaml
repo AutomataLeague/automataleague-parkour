@@ -1,0 +1,103 @@
+# PPO training for parkour with GPU-parallel MuJoCo-Warp environments
+env:
+  name: parkour-1
+  robot: spot
+  num_envs: 2048           # scaled for Jetson Orin; raise on bigger GPUs
+  max_episode_steps: 1000
+  seed: 42
+  frame_skip: 10           # ~50 Hz control
+
+  course:
+    track: circuit     # override with env.course.track=l_curved
+    length: 9.0
+    half_width: 1.6
+    level_difficulty: 0   # Stage-1 obstacles: 0=flat, 1..4 harder
+    height_scan: false    # append 12-point forward terrain scan to the obs (obs 49->61)
+    randomize_obstacles: false   # per-episode obstacle DR ~ U(dr_low,dr_high)*level (eval=1.0)
+    dr_low: 0.5
+    dr_high: 1.5
+    # action range: q_target = home + action_scale*action. null => robot default (0.3).
+    # Max foot lift by scale: 0.3->0.15m, 0.5->0.28m, 0.7->0.40m, 0.79->0.45m.
+    # Raise with the level so the foot can clear the taller obstacles:
+    #   L1: 0.30 | L2: 0.50 | L3: 0.70 | L4: ~0.79
+    action_scale: null
+    # race mode: navigate by along-track speed + gate-crossing (no forced dip to gate
+    # centres) so the agent finds the time-optimal line. Pair with the RACE reward
+    # preset below and warm-start from a solved obstacle policy. Override:
+    #   env.course.race_mode=true env.reward_weights.progress=0 env.reward_weights.checkpoint=0 \
+    #   env.reward_weights.alive=-0.03 env.reward_weights.target_speed=2.5 env.reward_weights.forward=2.0
+    race_mode: false
+
+  # Forward-velocity is the dense locomotion driver (makes moving beat standing);
+  # progress adds goal shaping; success/checkpoint are the big goal bonuses.
+  reward_weights:
+    forward: 1.5         # reward base speed toward the goal (up to target_speed)
+    target_speed: 1.0    # m/s; forward reward saturates here
+    progress: 2.0
+    checkpoint: 10.0
+    success: 100.0
+    alive: 0.0
+    upright: 0.05        # small posture shaping (low, so standing isn't a local optimum)
+    height: 0.05
+    action: 0.01
+    joint_vel: 0.001
+    fall: 10.0
+    off_path: 25.0       # off-track = terminate + strong penalty (stay on the path)
+
+  termination:
+    fall_height: 0.25
+    max_tilt_deg: 60.0
+    off_path: true
+
+# collector
+collector:
+  total_frames: 10_000_000
+  frames_per_batch: 65536   # num_envs * steps_per_env
+  device: cuda
+
+# PPO loss hyperparameters
+loss:
+  clip_epsilon: 0.2
+  entropy_coeff: 0.01     # higher exploration to escape the standing local optimum
+  critic_coeff: 0.5
+  loss_critic_type: l2
+  ppo_epochs: 5
+  mini_batch_size: 8192
+  gamma: 0.99
+  gae_lambda: 0.95
+  max_grad_norm: 1.0
+  anneal_lr: true
+  anneal_clip_epsilon: true
+
+# optim
+optim:
+  lr: 3.0e-4
+  device: cuda
+
+# network
+network:
+  hidden_sizes: [512, 256, 128]
+  activation: elu
+  device: cuda
+  init_checkpoint: null   # path to warm-start from (e.g. flat-circuit policy -> obstacles)
+
+# logging
+logger:
+  backend: wandb
+  project_name: automataleague-parkour
+  group_name: null
+  exp_name: ${env.name}_PPO
+  mode: online
+  eval_iter: 1_000_000   # eval + video every 1M frames
+  video: true
+  video_steps: 4000      # eval-video upper bound; clip ends early at episode done
+  log_outcome_breakdown: true
+
+# Curriculum (consumed by ppo_curriculum.py; ppo_single.py ignores it).
+# Trains each level in turn, warm-starting from the previous level's best policy.
+curriculum:
+  levels: [1, 2, 3, 4]
+  frames_per_level: [10_000_000, 10_000_000, 10_000_000, 20_000_000]
+  action_scale_per_level: [0.30, 0.50, 0.70, 0.79]
+  warm_start: true          # carry weights level -> level
+  eval_per_level: true
