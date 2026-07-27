@@ -23,7 +23,10 @@ def configs_from_cfg(cfg):
     """ParkourConfig/RewardConfig/TerminationConfig from a Hydra cfg, registry-backed."""
     from automataleague.envs.parkour.config import RewardConfig, TerminationConfig
 
-    level = int(getattr(cfg.env.course, "level_difficulty", 0)) if hasattr(cfg.env, "course") else 0
+    level = 0
+    if hasattr(cfg.env, "course"):
+        _lvl = getattr(cfg.env.course, "level_difficulty", 0)
+        level = 0 if _lvl is None else int(_lvl)
     course = get_env_spec(cfg.env.name).config(level)   # registry defaults (track, scan, scale)
     if hasattr(cfg.env, "course"):
         for k in _COURSE_KEYS:

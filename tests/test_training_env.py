@@ -23,3 +23,10 @@ def test_explicit_override_wins():
     course, _, _ = configs_from_cfg(_cfg(action_scale=0.79, race_mode=True))
     assert course.action_scale == pytest.approx(0.79)
     assert course.race_mode is True
+
+
+def test_null_level_difficulty_defaults_to_zero():
+    course, _, _ = configs_from_cfg(_cfg(level_difficulty=None))
+    assert course.level_difficulty == 0
+    assert course.track == "circuit"
+    assert course.action_scale == pytest.approx(0.30)
