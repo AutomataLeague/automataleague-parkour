@@ -6,8 +6,8 @@ SAC / TD3 (and community submissions) all compete on equal footing. Each entry i
 time-trialed over N noisy starts on the SAME course (race-nav, so the ideal line isn't
 penalized) and ranked by finish rate, then median lap time.
 
-    MUJOCO_GL=egl uv run python training/leaderboard.py \
-        --entries training/leaderboard_entries.json --track circuit --level 2 --seeds 5
+    MUJOCO_GL=egl uv run python tools/leaderboard.py \
+        --entries tools/leaderboard_entries.json --track circuit --level 2 --seeds 5
 
 Adding a new algorithm = implement its branch in `load_policy` (map its checkpoint to
 an actor with an actor(TensorDict{observation})->action interface).
@@ -31,7 +31,7 @@ from automataleague.envs.parkour.config import ParkourConfig, TerminationConfig 
 from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU  # noqa: E402
 from automataleague.robots import get_robot  # noqa: E402
 
-from demo_render import _build_actor  # noqa: E402
+from automataleague.training.models import build_actor as _build_actor  # noqa: E402
 
 FRAME_DT = 0.002
 
@@ -130,7 +130,7 @@ def render_markdown(board, track, level, n_seeds):
 
 def main():
     p = argparse.ArgumentParser(description="Rank parkour agents by lap time.")
-    p.add_argument("--entries", default="training/leaderboard_entries.json")
+    p.add_argument("--entries", default="tools/leaderboard_entries.json")
     p.add_argument("--track", default="circuit")
     p.add_argument("--level", type=int, default=2)
     p.add_argument("--seeds", type=int, default=5)

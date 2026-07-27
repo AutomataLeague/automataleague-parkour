@@ -10,7 +10,7 @@ Agents are "blind" to each other (they use their solo 49-dim observation); they
 interact only through physics. Works for any two checkpoints (PPO vs PPO, etc.).
 
 Usage:
-    MUJOCO_GL=egl uv run python training/eval_1v1.py --track circuit \
+    MUJOCO_GL=egl uv run python tools/eval_1v1.py --track circuit \
         --agents runA.pt runB.pt --names Alice Bob --level 0 --out results/race.json
 """
 
@@ -43,8 +43,8 @@ from automataleague.envs.parkour.spatial import tilt_angle  # noqa: E402
 from automataleague.envs.parkour.state import extract_state  # noqa: E402
 from automataleague.robots import get_robot  # noqa: E402
 
-from demo_render import _build_actor  # noqa: E402
-from utils_ppo import _configs_from_cfg  # noqa: E402
+from automataleague.training.env import configs_from_cfg as _configs_from_cfg  # noqa: E402
+from automataleague.training.models import build_actor as _build_actor  # noqa: E402
 
 
 def load_agent(path, track, level):

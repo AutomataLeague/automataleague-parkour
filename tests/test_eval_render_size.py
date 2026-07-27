@@ -1,14 +1,6 @@
-import os
-import sys
-
 import mujoco
-import pytest
 
-# eval_1v1.py imports demo_render/utils_ppo flat (run from training/ via CLI); match
-# that here, same convention as tests/test_ppo_utils.py.
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "training"))
-
-from training.eval_1v1 import _ensure_offscreen
+from tools.eval_1v1 import _ensure_offscreen
 
 
 def _tiny_model():
