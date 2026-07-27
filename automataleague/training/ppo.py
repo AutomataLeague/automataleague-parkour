@@ -35,8 +35,7 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
     if action_scale is not None:
         cfg.env.course.action_scale = float(action_scale)
     cfg.collector.total_frames = int(total_frames)
-    if init_ckpt is not None:
-        cfg.network.init_checkpoint = init_ckpt
+    cfg.network.init_checkpoint = init_ckpt   # explicit None => fresh (curriculum warm_start=false)
 
     device = cfg.network.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
     device = torch.device(device)

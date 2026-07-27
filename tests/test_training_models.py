@@ -26,3 +26,11 @@ def test_pad_obs_input_zero_pads_first_layer():
     assert out["0.weight"].shape == (8, 61)          # padded 49 -> 61
     assert out["0.weight"][:, 49:].sum() == 0        # new cols zeroed
     assert out["2.weight"].shape == (8, 64)          # hidden width untouched
+
+
+def test_get_activation_maps_elu():
+    import torch
+    from automataleague.training.models import get_activation
+    from omegaconf import OmegaConf
+    cfg = OmegaConf.create({"network": {"activation": "elu"}})
+    assert get_activation(cfg) is torch.nn.ELU

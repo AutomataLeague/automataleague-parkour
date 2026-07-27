@@ -95,6 +95,7 @@ def make_ppo_models(cfg, train_env, device):
 def build_actor(cfg, robot, device):
     """Rebuild the actor from config/dims without a live GPU env (stub specs)."""
     scan_on = bool(getattr(getattr(cfg.env, "course", object()), "height_scan", False))
+    # obs grows by SCAN_N when the checkpoint was trained with the height scan.
     obs_dim = robot.obs_dim + (hs.SCAN_N if scan_on else 0)
 
     class _Stub:
@@ -107,6 +108,7 @@ def build_actor(cfg, robot, device):
         action=Bounded(low=-torch.ones(1, robot.action_dim, device=device),
                        high=torch.ones(1, robot.action_dim, device=device), device=device),
         shape=(1,))
+    # make_ppo_models reads env.action_spec as the leaf Bounded.
     stub.action_spec = action_spec["action"]
     actor, _ = make_ppo_models(cfg, stub, device)
     return actor
