@@ -2,7 +2,6 @@
 
     uv run python examples/ppo_single.py env.course.level_difficulty=2
 """
-import os
 import hydra
 import numpy as np
 import torch

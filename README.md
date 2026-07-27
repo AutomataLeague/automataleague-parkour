@@ -54,30 +54,54 @@ uv run python tools/render_scene.py --robot spot --track circuit --level 3   # w
 
 Outputs land in `renders/`.
 
+## Using environments
+
+Reusable environments and PPO code live in the `automataleague` package; scripts
+that drive them live in `examples/` and `tools/`.
+
+```python
+from automataleague import make_env, list_environments
+
+print([s.env_id for s in list_environments()])   # ['parkour-1']
+env = make_env("parkour-1", robot="spot", level=4)
+```
+
+`automataleague.training` (models/env/ppo/curriculum) is the task-agnostic PPO
+pipeline: direct-stepping on-policy loop, GAE, `ClipPPOLoss`, LR/clip annealing,
+wandb, video logging, checkpoints. `make_ppo_models` sizes networks from env specs,
+so it works for any robot/obs dim.
+
 ## Training
 
-```bash
-cd training
-# flat circuit from scratch
-MUJOCO_GL=egl python train_ppo.py env.course.track=circuit env.max_episode_steps=3500
+Entry points live in `examples/`, run from the repo root with `uv run`; Hydra
+config is `examples/config_ppo.yaml`.
 
-# obstacles, warm-started from a flat-track policy (difficulty curriculum L1 -> L4)
-MUJOCO_GL=egl python train_ppo.py env.course.track=circuit env.course.level_difficulty=1 \
-  env.max_episode_steps=3500 env.reward_weights.height=0.0 \
-  network.init_checkpoint=/path/to/flat_circuit.pt logger.exp_name=parkour_obst_L1
+```bash
+# single difficulty level, standard TorchRL PPO scheme
+uv run python examples/ppo_single.py env.course.level_difficulty=2
+
+# curriculum across difficulty levels, warm-starting each stage from the last
+uv run python examples/ppo_curriculum.py
 ```
 
 Key wandb signals: `train/checkpoints_reached`, `eval/dist_to_finish`,
-`train/{success,fell,off_path}_rate`, plus an `eval/video`.
+`train/{success,fell,off_path}_rate`, plus an `eval/video`. Checkpoints land in
+`checkpoints/`.
 
-## Demo videos
-
-Render a trained checkpoint from several synchronized cameras (record-once,
-render-many):
+## Tools
 
 ```bash
-MUJOCO_GL=egl python training/demo_render.py --checkpoint training/checkpoints/ppo_final.pt \
+# render a trained checkpoint from several synchronized cameras (record-once, render-many)
+MUJOCO_GL=egl uv run python tools/demo_render.py --checkpoint checkpoints/ppo_final.pt \
   --cameras drone,over_shoulder,side,top --out-dir videos/
+
+# race two trained agents head-to-head or time-trial on the same track
+MUJOCO_GL=egl uv run python tools/eval_1v1.py --track circuit \
+  --agents runA.pt runB.pt --names Alice Bob --level 0 --out results/race.json
+
+# rank checkpoints on a track/difficulty by finish rate then median lap time
+MUJOCO_GL=egl uv run python tools/leaderboard.py \
+  --entries tools/leaderboard_entries.json --track circuit --level 2 --seeds 5
 ```
 
 ## Layout
@@ -85,18 +109,22 @@ MUJOCO_GL=egl python training/demo_render.py --checkpoint training/checkpoints/p
 ```
 assets/spot/                     # vendored Boston Dynamics Spot (Menagerie, Apache-2.0)
 automataleague/
+  envs/
+    registry.py                  # EnvSpec registry: make_env / list_environments
+    parkour/
+      tracks.py                  # centerline tracks (straight/L/S/circuit) + turtle builder
+      obstacles.py                # Stage-1 physical terrain, scaled by level_difficulty
+      config.py                  # ParkourConfig / RewardConfig / TerminationConfig
+      scene.py                   # MjSpec: paint the track + attach robot + place obstacles
+      spatial.py state.py navigation.py observation.py rewards.py termination.py
+      parkour_warp.py            # batched GPU env (MuJoCo-Warp)
+      parkour_cpu.py             # single-env CPU env (rendering)
+      render.py                  # camera presets + record/render trajectory
   robots/                        # robot registry: RobotSpec contract + per-robot specs
-  envs/parkour/
-    tracks.py                    # centerline tracks (straight/L/S/circuit) + turtle builder
-    obstacles.py                 # Stage-1 physical terrain, scaled by level_difficulty
-    config.py                    # ParkourConfig / RewardConfig / TerminationConfig
-    scene.py                     # MjSpec: paint the track + attach robot + place obstacles
-    spatial.py state.py navigation.py observation.py rewards.py termination.py
-    parkour_warp.py              # batched GPU env (MuJoCo-Warp)
-    parkour_cpu.py               # single-env CPU env (rendering)
-    render.py                    # camera presets + record/render trajectory
-training/                        # PPO pipeline: train_ppo.py, utils_ppo.py, config, demo_render
-tools/                           # render_scene.py, camera/obstacle previews, GPU validators
+  training/                      # task-agnostic PPO: models.py, env.py, ppo.py, curriculum.py
+examples/                        # entry points: ppo_single.py, ppo_curriculum.py, config_ppo.yaml
+tools/                           # demo_render.py, eval_1v1.py, leaderboard.py, render_scene.py, ...
+checkpoints/                     # trained checkpoints (*.pt, gitignored)
 tests/                           # CPU-side unit tests for the whole task brain
 ```
 
