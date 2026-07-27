@@ -7,3 +7,5 @@ from automataleague.training.models import (  # noqa: F401
 from automataleague.training.env import (  # noqa: F401
     configs_from_cfg, env_maker, make_environment, rollout_video, log_metrics,
 )
+from automataleague.training.ppo import run_ppo  # noqa: F401
+from automataleague.training.curriculum import CurriculumConfig, curriculum_from_cfg  # noqa: F401
