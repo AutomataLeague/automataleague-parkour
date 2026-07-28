@@ -25,3 +25,7 @@ renders/
 videos/
 *.mp4
 results/
+
+# Dev tools (render/eval/leaderboard) — kept out of the training-facing repo
+tools/
+tests/test_eval_render_size.py
