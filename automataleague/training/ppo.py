@@ -1,36 +1,21 @@
-"""PPO training with GPU-parallel MuJoCo-Warp parkour environments.
+"""Reusable PPO training loop (on-policy, GPU-parallel Warp envs)."""
+from __future__ import annotations
 
-On-policy: collect large batches from many parallel envs, compute GAE, then
-mini-batch PPO updates. Everything stays on GPU. Ported from spaceX/train_ppo.py.
-"""
-
-import os
-import time
+import os, time
 from collections import defaultdict
 
-import hydra
+import numpy as np, torch, tqdm, wandb
+from tensordict import TensorDict
+from torchrl._utils import logger as torchrl_logger
+from torchrl.data import LazyTensorStorage, TensorDictReplayBuffer
+from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement
+from torchrl.envs import ExplorationType, set_exploration_type
+from torchrl.objectives import ClipPPOLoss, group_optimizers
+from torchrl.objectives.value.advantages import GAE
+from torchrl.record.loggers import generate_exp_name, get_logger
 
-_ORIGINAL_CWD = os.getcwd()
-
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
-import tqdm  # noqa: E402
-import wandb  # noqa: E402
-from tensordict import TensorDict  # noqa: E402
-from torchrl._utils import logger as torchrl_logger  # noqa: E402
-from torchrl.data import LazyTensorStorage, TensorDictReplayBuffer  # noqa: E402
-from torchrl.data.replay_buffers.samplers import SamplerWithoutReplacement  # noqa: E402
-from torchrl.envs import ExplorationType, set_exploration_type  # noqa: E402
-from torchrl.objectives import ClipPPOLoss, group_optimizers  # noqa: E402
-from torchrl.objectives.value.advantages import GAE  # noqa: E402
-from torchrl.record.loggers import generate_exp_name, get_logger  # noqa: E402
-
-from utils_ppo import (  # noqa: E402
-    log_metrics,
-    make_environment,
-    make_ppo_models,
-    rollout_video,
-)
+from automataleague.training.env import make_environment, rollout_video, log_metrics
+from automataleague.training.models import make_ppo_models, _pad_obs_input
 
 OUTCOME_NAMES = {0: "ongoing", 1: "success", 2: "fell", 3: "off_path"}
 
@@ -42,36 +27,22 @@ def aggregate_outcomes(codes):
     return dict(stats)
 
 
-def _pad_obs_input(sd, cur_obs, hidden_sizes=()):
-    """Zero-pad the input-layer weights of a warm-start state_dict to `cur_obs`
-    columns, so a policy trained on a smaller observation (e.g. blind, 49-dim) loads
-    into a sensor-augmented network (e.g. +12 height-scan). Only the first layer
-    (in_features < cur_obs and not a hidden width) is padded; its new trailing
-    columns start at zero, so the warm-started policy initially ignores the sensor
-    and keeps its learned gait. A same-dim checkpoint is loaded unchanged.
-    """
-    skip = {int(h) for h in hidden_sizes}
-    out = {}
-    for k, v in sd.items():
-        if v.dim() == 2 and v.shape[1] < cur_obs and v.shape[1] not in skip:
-            pad = torch.zeros(v.shape[0], cur_obs - v.shape[1], dtype=v.dtype, device=v.device)
-            v = torch.cat([v, pad], dim=1)
-        out[k] = v
-    return out
+def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
+            run_name="ppo", checkpoints_root="checkpoints") -> str:
+    """Train one PPO run at `level` for `total_frames`; return the best checkpoint path."""
+    # Parameterize the run into the shared cfg (mutating the DictConfig is fine here).
+    cfg.env.course.level_difficulty = int(level)
+    if action_scale is not None:
+        cfg.env.course.action_scale = float(action_scale)
+    cfg.collector.total_frames = int(total_frames)
+    cfg.network.init_checkpoint = init_ckpt   # explicit None => fresh (curriculum warm_start=false)
 
-
-@hydra.main(version_base="1.1", config_path="", config_name="config_ppo")
-def main(cfg: "DictConfig"):  # noqa: F821
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    project_root = os.path.abspath(os.path.join(script_dir, ".."))
-    os.chdir(project_root)
-
-    device = cfg.network.device
-    if device in ("", None):
-        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    device = cfg.network.device or ("cuda:0" if torch.cuda.is_available() else "cpu")
     device = torch.device(device)
+    checkpoint_dir = os.path.join(checkpoints_root, run_name)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
-    exp_name = generate_exp_name("PPO", cfg.logger.exp_name)
+    exp_name = generate_exp_name("PPO", f"{cfg.logger.exp_name}_{run_name}")
     logger = None
     if cfg.logger.backend:
         logger = get_logger(
@@ -126,9 +97,6 @@ def main(cfg: "DictConfig"):  # noqa: F821
         sampler=SamplerWithoutReplacement(),
         batch_size=cfg.loss.mini_batch_size,
     )
-
-    checkpoint_dir = os.path.join(script_dir, "checkpoints")
-    os.makedirs(checkpoint_dir, exist_ok=True)
 
     num_mini_batches = cfg.collector.frames_per_batch // cfg.loss.mini_batch_size
     total_network_updates = (
@@ -334,6 +302,4 @@ def main(cfg: "DictConfig"):  # noqa: F821
     if logger is not None:
         wandb.finish()
 
-
-if __name__ == "__main__":
-    main()
+    return os.path.join(checkpoint_dir, "ppo_best.pt")

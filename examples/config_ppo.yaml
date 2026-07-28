@@ -1,6 +1,6 @@
 # PPO training for parkour with GPU-parallel MuJoCo-Warp environments
 env:
-  name: parkour_spot
+  name: parkour-1
   robot: spot
   num_envs: 2048           # scaled for Jetson Orin; raise on bigger GPUs
   max_episode_steps: 1000
@@ -8,7 +8,7 @@ env:
   frame_skip: 10           # ~50 Hz control
 
   course:
-    track: straight     # override with env.course.track=l_curved
+    track: circuit     # override with env.course.track=l_curved
     length: 9.0
     half_width: 1.6
     level_difficulty: 0   # Stage-1 obstacles: 0=flat, 1..4 harder
@@ -92,3 +92,12 @@ logger:
   video: true
   video_steps: 4000      # eval-video upper bound; clip ends early at episode done
   log_outcome_breakdown: true
+
+# Curriculum (consumed by ppo_curriculum.py; ppo_single.py ignores it).
+# Trains each level in turn, warm-starting from the previous level's best policy.
+curriculum:
+  levels: [1, 2, 3, 4]
+  frames_per_level: [10_000_000, 10_000_000, 10_000_000, 20_000_000]
+  action_scale_per_level: [0.30, 0.50, 0.70, 0.79]
+  warm_start: true          # carry weights level -> level
+  eval_per_level: true

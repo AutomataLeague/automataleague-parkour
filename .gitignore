@@ -14,8 +14,9 @@ docs/superpowers/
 CLAUDE.md
 
 # Training / experiment outputs
-training/outputs/
-training/checkpoints/*.pt
+outputs/
+examples/outputs/
+checkpoints/*.pt
 wandb/
 *.log
 
