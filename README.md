@@ -2,7 +2,7 @@
   <img src="assets/automataleague_logo.png" alt="Automata League" width="340">
 </p>
 
-# Automata League Parkour
+# automataleague-parkour
 
 The parkour competition environment of the **Automata League**: a quadruped (Boston
 Dynamics Spot) learns to run obstacle circuits across difficulty levels 0–4, in
@@ -62,8 +62,18 @@ uv run python examples/ppo_curriculum.py
   live under the `curriculum:` block in the config.
 - Checkpoints are written to `checkpoints/`.
 
-GPU training runs on the Jetson **gym1** box (see the `gym1-server` guidance; on Jetson
-use the JetPack torch wheel and `.venv/bin/python`, not `uv run`).
+## Simulation speed
+
+Training throughput on GPU-parallel MuJoCo-Warp environments, tracked per environment
+and version so we can watch it across releases and new tasks.
+
+| Environment | Robot | Hardware | Parallel envs | Throughput (steps/s) | Measured |
+|---|---|---|---|---|---|
+| parkour-1 | Spot | NVIDIA Jetson Orin | 1024 | ≈ 12.8k | early estimate — fresh benchmark pending |
+
+Throughput is total environment-steps stepped per wall-clock second across all parallel
+envs — the `train/fps` value logged during a run. To reproduce, read `train/fps` from the
+run's logs, or time a short rollout: `num_envs × steps / seconds`.
 
 ## Adding a custom robot
 
