@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/automataleague_logo.png" alt="Automata League" width="340">
+</p>
+
 # automataleague
 
 A league of robots competing at athletic tasks in [MuJoCo](https://mujoco.org/).
