@@ -2,7 +2,7 @@
   <img src="assets/automataleague_logo.png" alt="Automata League" width="340">
 </p>
 
-# automataleague-parkour
+# Automata League Parkour
 
 The parkour competition environment of the **Automata League**: a quadruped (Boston
 Dynamics Spot) learns to run obstacle circuits across difficulty levels 0–4, in
