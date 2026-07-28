@@ -2,13 +2,14 @@
   <img src="assets/automataleague_logo.png" alt="Automata League" width="340">
 </p>
 
-# automataleague
+# Automata League Parkour
 
-A league of robots competing at athletic tasks in [MuJoCo](https://mujoco.org/).
-Robots are pluggable; policies are trained with [TorchRL](https://github.com/pytorch/rl)
-PPO, GPU-parallel via [MuJoCo-Warp](https://github.com/google-deepmind/mujoco_warp).
-The first task is **parkour** — a quadruped (Boston Dynamics Spot) running an
-obstacle circuit across difficulty levels 0–4.
+The parkour competition environment of the **Automata League**: a quadruped (Boston
+Dynamics Spot) learns to run obstacle circuits across difficulty levels 0–4, in
+[MuJoCo](https://mujoco.org/). Policies are trained with
+[TorchRL](https://github.com/pytorch/rl) PPO, GPU-parallel via
+[MuJoCo-Warp](https://github.com/google-deepmind/mujoco_warp). Robots and rewards are
+pluggable.
 
 ## Setup
 
