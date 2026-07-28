@@ -4,12 +4,13 @@
 
 # Automata League Parkour
 
-The parkour competition environment of the **Automata League**: a quadruped (Boston
-Dynamics Spot) learns to run obstacle circuits across difficulty levels 0–4, in
-[MuJoCo](https://mujoco.org/). Policies are trained with
-[TorchRL](https://github.com/pytorch/rl) PPO, GPU-parallel via
-[MuJoCo-Warp](https://github.com/google-deepmind/mujoco_warp). Robots and rewards are
-pluggable.
+The parkour competition environment of the **Automata League**: a robot learns to run
+**parkour courses** — tracks with obstacles it must overcome to reach the finish — in
+[MuJoCo](https://mujoco.org/). Boston Dynamics **Spot** is the example robot, but you can
+plug in your own (see [Adding a custom robot](#adding-a-custom-robot)). The examples train
+with [TorchRL](https://github.com/pytorch/rl) PPO, GPU-parallel via
+[MuJoCo-Warp](https://github.com/google-deepmind/mujoco_warp); any other TorchRL agent can
+be used the same way (see [Training](#training)).
 
 ## Setup
 
@@ -23,8 +24,11 @@ Headless rendering needs a GL backend: `MUJOCO_GL=egl`.
 ## The parkour environment
 
 The parkour task lives in `automataleague/envs/parkour/`. Environments are named and
-versioned in a registry (`automataleague/envs/registry.py`); today there is one:
-**`parkour-1`** — a winding circuit with difficulty levels `0` (flat) … `4` (hardest).
+versioned in a registry (`automataleague/envs/registry.py`) and imported by id.
+
+| Environment | Track | Difficulty levels | Obstacles | Domain randomization |
+|---|---|---|---|---|
+| **`parkour-1`** | winding circuit (closed loop) | 5 &nbsp;(0 = flat … 4 = hardest) | 5 &nbsp;(paving, hurdle, staircase, ramp, side-incline) | Yes &nbsp;(per-episode obstacle scaling) |
 
 ```python
 from automataleague import make_env, list_environments
