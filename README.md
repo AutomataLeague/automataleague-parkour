@@ -68,16 +68,22 @@ uv run python examples/ppo_curriculum.py
 
 ## Simulation speed
 
-Training throughput on GPU parallel MuJoCo Warp environments, tracked per environment
-and version so we can watch it across releases and new tasks.
+Throughput of the batched MuJoCo Warp env for `parkour-1` (level 2, height scan on),
+measured as total environment steps per second across all parallel envs. Tracked per
+machine so we can compare hardware and watch it across versions. Throughput climbs with
+`num_envs` as parallelism amortizes the fixed cost of each step.
 
-| Environment | Robot | Hardware | Parallel envs | Throughput (steps/s) | Measured |
-|---|---|---|---|---|---|
-| parkour-1 | Spot | NVIDIA Jetson Orin | 1024 | ≈ 12.8k | early estimate, benchmark pending |
+| Machine | GPU | 1024 envs | 2048 envs | 4096 envs |
+|---|---|---|---|---|
+| gym1 | NVIDIA Jetson Orin | ≈ 10.5k | ≈ 12.0k | ≈ 13.0k |
+| spark | NVIDIA GB10 | pending | pending | pending |
+| laptop | NVIDIA RTX 4060 Laptop | pending | pending | pending |
 
-Throughput is total environment steps stepped per wall clock second across all parallel
-envs, the `train/fps` value logged during a run. To reproduce, read `train/fps` from the
-run's logs, or time a short rollout: `num_envs × steps / seconds`.
+For reference, the single environment CPU backend (used for rendering and evaluation)
+runs at about 1.2k env steps per second on the laptop.
+
+Measured by stepping the env after a warmup and computing `num_envs × steps / seconds`;
+the same figure is logged as `train/fps` during a training run.
 
 ## Adding a custom robot
 
