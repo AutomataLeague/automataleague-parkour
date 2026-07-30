@@ -2,6 +2,8 @@
 
     uv run python examples/ppo_single.py env.course.level_difficulty=2
 """
+import os
+
 import hydra
 import numpy as np
 import torch
@@ -11,6 +13,7 @@ from automataleague.training import run_ppo
 
 @hydra.main(version_base="1.1", config_path="", config_name="config_ppo")
 def main(cfg):  # noqa: F821
+    os.chdir(hydra.utils.get_original_cwd())   # Hydra chdirs into outputs/; restore so checkpoints/ land at the launch dir
     torch.manual_seed(cfg.env.seed)
     np.random.seed(cfg.env.seed)
     best = run_ppo(
