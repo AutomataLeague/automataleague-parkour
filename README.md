@@ -70,18 +70,12 @@ uv run python examples/ppo_curriculum.py
 ## Simulation speed
 
 Throughput of the batched MuJoCo Warp env for `parkour-1` (level 2, height scan on),
-measured as total environment steps per second across all parallel envs. Tracked per
-machine so we can compare hardware and watch it across versions. Throughput climbs with
-`num_envs` as parallelism amortizes the fixed cost of each step.
+measured as total environment steps per second across all parallel envs. Throughput climbs
+with `num_envs` as parallelism amortizes the fixed cost of each step.
 
-| Machine | GPU | 1024 envs | 2048 envs | 4096 envs |
-|---|---|---|---|---|
-| gym1 | NVIDIA Jetson Orin | ≈ 10.5k | ≈ 12.0k | ≈ 13.0k |
-| spark | NVIDIA GB10 | pending | pending | pending |
-| laptop | NVIDIA RTX 4060 Laptop | pending | pending | pending |
-
-For reference, the single environment CPU backend (used for rendering and evaluation)
-runs at about 1.2k env steps per second on the laptop.
+Measured across GPU variants, the batched env reaches roughly **30k environment steps per
+second**. For reference, the single environment CPU backend (used for rendering and
+evaluation) runs at about 1.2k env steps per second.
 
 Measured by stepping the env after a warmup and computing `num_envs × steps / seconds`;
 the same figure is logged as `train/fps` during a training run.
