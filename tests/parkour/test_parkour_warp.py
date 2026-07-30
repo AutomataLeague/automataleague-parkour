@@ -4,7 +4,7 @@ import torch
 
 @pytest.mark.gpu
 def test_warp_env_reset_and_step():
-    from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp
+    from automataleague_parkour.envs.parkour.parkour_warp import ParkourEnvWarp
 
     env = ParkourEnvWarp(robot="spot", num_envs=64, device="cuda")
     td = env.reset()
@@ -19,7 +19,7 @@ def test_warp_env_reset_and_step():
 def test_warp_env_throughput():
     import time
 
-    from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp
+    from automataleague_parkour.envs.parkour.parkour_warp import ParkourEnvWarp
 
     N = 512
     env = ParkourEnvWarp(robot="spot", num_envs=N, device="cuda")

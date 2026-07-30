@@ -24,15 +24,15 @@ Headless rendering needs a GL backend: `MUJOCO_GL=egl`.
 
 ## The parkour environment
 
-The parkour task lives in `automataleague/envs/parkour/`. Environments are named and
-versioned in a registry (`automataleague/envs/registry.py`) and imported by id.
+The parkour task lives in `automataleague_parkour/envs/parkour/`. Environments are named and
+versioned in a registry (`automataleague_parkour/envs/registry.py`) and imported by id.
 
 | Environment | Track | Difficulty levels | Obstacles | Domain randomization |
 |---|---|---|---|---|
 | **`parkour-1`** | winding circuit (closed loop) | 5 &nbsp;(0 flat to 4 hardest) | 5 &nbsp;(paving, hurdle, staircase, ramp, side incline) | Yes &nbsp;(per episode obstacle scaling) |
 
 ```python
-from automataleague import make_env, list_environments
+from automataleague_parkour import make_env, list_environments
 
 list_environments()                                       # [EnvSpec(env_id="parkour-1", ...)]
 
@@ -82,7 +82,7 @@ the same figure is logged as `train/fps` during a training run.
 
 ## Adding a custom robot
 
-A robot is a `RobotSpec` (`automataleague/robots/base.py`), the whole contract a task
+A robot is a `RobotSpec` (`automataleague_parkour/robots/base.py`), the whole contract a task
 needs. Observation and action sizes are **derived from the joint count**, so a robot with
 a different number of legs or joints plugs into the same env, reward, and PPO code with no
 changes to any of them.
@@ -90,7 +90,7 @@ changes to any of them.
 Unitree **Go1** is the worked example. It is nothing like Spot: half the standing height
 (0.27 m vs 0.46 m), a different joint naming scheme, and a stock MuJoCo Menagerie model.
 Adding it took the three steps below and one asset fix. The full result is
-`automataleague/robots/unitree_go1.py`; here is what each step actually involved.
+`automataleague_parkour/robots/unitree_go1.py`; here is what each step actually involved.
 
 **1. Vendor the model.** Drop the MJCF and its meshes under `assets/<name>/`, keeping the
 upstream `LICENSE`. Go1 came from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)
@@ -100,11 +100,11 @@ One asset fix was needed: Menagerie sets a default geom `margin="0.001"`, which 
 backend rejects (`non-zero margin with MULTICCD`). Removing that one attribute from
 `go1.xml` was the only edit to the model. Worth knowing before you vendor any Menagerie robot.
 
-**2. Write the factory** in `automataleague/robots/<name>.py`. Every field is read off the
+**2. Write the factory** in `automataleague_parkour/robots/<name>.py`. Every field is read off the
 model's own docs / the `home` keyframe:
 
 ```python
-from automataleague.robots.base import RobotSpec
+from automataleague_parkour.robots.base import RobotSpec
 
 def make_go1() -> RobotSpec:
     return RobotSpec(
@@ -133,7 +133,7 @@ The two things that matter most:
 `foot_geom_names` is optional: name the foot geoms and the foot air-time gait reward can
 find them (see [Adding a custom reward](#adding-a-custom-reward)). Leave it empty to skip.
 
-**3. Register it** in `automataleague/robots/__init__.py`:
+**3. Register it** in `automataleague_parkour/robots/__init__.py`:
 
 ```python
 ROBOTS = {"spot": make_spot, "go1": make_go1}
@@ -154,18 +154,18 @@ different reward though: Go1 walks cleanly once the foot air-time gait term is o
 what the `reward_fn` hook in the next section is for, and why the reward travels with the
 robot while the env stays fixed.
 
-Compare `automataleague/robots/spot.py` and `automataleague/robots/unitree_go1.py` side by
+Compare `automataleague_parkour/robots/spot.py` and `automataleague_parkour/robots/unitree_go1.py` side by
 side to see exactly what changes from one robot to the next.
 
 ## Adding a custom reward
 
-Reward weights are a `RewardConfig` (`automataleague/envs/parkour/config.py`); the terms
-are combined in `compute_reward` (`automataleague/envs/parkour/rewards.py`).
+Reward weights are a `RewardConfig` (`automataleague_parkour/envs/parkour/config.py`); the terms
+are combined in `compute_reward` (`automataleague_parkour/envs/parkour/rewards.py`).
 
 **Retune existing terms** (no code): pass a `RewardConfig`, or override in training.
 
 ```python
-from automataleague.envs.parkour.config import RewardConfig
+from automataleague_parkour.envs.parkour.config import RewardConfig
 env = make_env("parkour-1", robot="spot",
                reward_cfg=RewardConfig(forward=2.0, checkpoint=5.0, alive=-0.01))
 ```
@@ -180,7 +180,7 @@ different rewards, so this lets the reward travel with the robot while the env s
 
 ```python
 import torch
-from automataleague import make_env
+from automataleague_parkour import make_env
 
 def my_reward(state, prev_dist, cur_dist, reached_intermediate, reached_finish,
               fell, off_path, action, nominal_height, rc, forward_vel=None):

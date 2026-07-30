@@ -8,7 +8,7 @@ import hydra
 import numpy as np
 import torch
 
-from automataleague.training import curriculum_from_cfg, run_ppo
+from automataleague_parkour.training import curriculum_from_cfg, run_ppo
 
 
 @hydra.main(version_base="1.1", config_path="", config_name="config_ppo")

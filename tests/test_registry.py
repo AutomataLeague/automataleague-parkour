@@ -1,6 +1,6 @@
 import pytest
-from automataleague import make_env, list_environments, get_env_spec
-from automataleague.envs.registry import EnvSpec
+from automataleague_parkour import make_env, list_environments, get_env_spec
+from automataleague_parkour.envs.registry import EnvSpec
 
 
 def test_parkour1_registered():

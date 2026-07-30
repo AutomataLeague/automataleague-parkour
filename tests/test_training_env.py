@@ -1,7 +1,7 @@
 import pytest
 from omegaconf import OmegaConf
 
-from automataleague.training.env import configs_from_cfg
+from automataleague_parkour.training.env import configs_from_cfg
 
 
 def _cfg(**course):

@@ -10,9 +10,9 @@ import math
 import torch
 from torch import Tensor
 
-from automataleague.envs.parkour.config import TerminationConfig
-from automataleague.envs.parkour.spatial import tilt_angle
-from automataleague.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour.config import TerminationConfig
+from automataleague_parkour.envs.parkour.spatial import tilt_angle
+from automataleague_parkour.envs.parkour.state import ParkourState
 
 
 def compute_termination(

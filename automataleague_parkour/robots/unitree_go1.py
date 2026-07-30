@@ -13,7 +13,7 @@ import os
 
 import numpy as np
 
-from automataleague.robots.base import RobotSpec
+from automataleague_parkour.robots.base import RobotSpec
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _GO1_XML = os.path.join(_ROOT, "assets", "unitree_go1", "go1.xml")

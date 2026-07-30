@@ -4,7 +4,7 @@ An ENV is a registry id (``"parkour-1"``) mapped to an ``EnvSpec``: a default
 ``ParkourConfig`` factory over the shared ``envs/parkour`` engine, plus season
 metadata. Users import an env by id:
 
-    from automataleague import make_env, list_environments
+    from automataleague_parkour import make_env, list_environments
     env = make_env("parkour-1", robot="spot", level=4)          # season-0, hardest
 
 Add a future (harder) season by adding one ``EnvSpec`` entry — the engine is shared.
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from automataleague.envs.parkour.config import (
+from automataleague_parkour.envs.parkour.config import (
     ParkourConfig,
     RewardConfig,
     TerminationConfig,
@@ -89,10 +89,10 @@ def make_env(env_id, robot="spot", level=None, backend="warp", num_envs=None,
     rc = reward_cfg if reward_cfg is not None else RewardConfig()
     tc = term_cfg if term_cfg is not None else TerminationConfig()
     if backend == "cpu":
-        from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU
+        from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
         return ParkourEnvCPU(robot=robot, cfg=course, reward_cfg=rc, reward_fn=reward_fn, term_cfg=tc)
     if backend == "warp":
-        from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp  # GPU-only
+        from automataleague_parkour.envs.parkour.parkour_warp import ParkourEnvWarp  # GPU-only
         return ParkourEnvWarp(
             robot=robot, num_envs=num_envs or 2048, cfg=course,
             reward_cfg=rc, reward_fn=reward_fn, term_cfg=tc)

@@ -63,7 +63,7 @@ class ParkourConfig:
 
     def build_track(self):
         """Construct the Track (centerline polyline) for this config."""
-        from automataleague.envs.parkour.tracks import get_track
+        from automataleague_parkour.envs.parkour.tracks import get_track
 
         if self.track == "straight":
             return get_track("straight", length=self.length, spawn_x=self.spawn_x)

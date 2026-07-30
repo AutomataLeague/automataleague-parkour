@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import torch
 from torch import Tensor
 
-from automataleague.envs.parkour.scene import SceneInfo
+from automataleague_parkour.envs.parkour.scene import SceneInfo
 
 
 @dataclass

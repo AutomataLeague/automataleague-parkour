@@ -1,5 +1,5 @@
 from omegaconf import OmegaConf
-from automataleague.training.curriculum import CurriculumConfig, curriculum_from_cfg
+from automataleague_parkour.training.curriculum import CurriculumConfig, curriculum_from_cfg
 
 
 def test_curriculum_from_cfg():

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from automataleague.robots.base import RobotSpec
-from automataleague.robots.spot import make_spot
-from automataleague.robots.unitree_go1 import make_go1
+from automataleague_parkour.robots.base import RobotSpec
+from automataleague_parkour.robots.spot import make_spot
+from automataleague_parkour.robots.unitree_go1 import make_go1
 
 ROBOTS: dict[str, Callable[[], RobotSpec]] = {
     "spot": make_spot,

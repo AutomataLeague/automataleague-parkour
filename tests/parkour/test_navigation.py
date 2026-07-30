@@ -1,7 +1,7 @@
 import torch
 
-from automataleague.envs.parkour import navigation as nav
-from automataleague.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour import navigation as nav
+from automataleague_parkour.envs.parkour.state import ParkourState
 
 
 def _state_at(x, y, yaw=0.0, N=1):

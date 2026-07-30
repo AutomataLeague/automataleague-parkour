@@ -8,7 +8,7 @@ from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import ExplorationType
 from torchrl.modules import MLP, ProbabilisticActor, TanhNormal, ValueOperator
 
-from automataleague.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour import height_scan as hs
 
 
 def get_activation(cfg):

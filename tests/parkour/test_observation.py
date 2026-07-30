@@ -1,9 +1,9 @@
 import torch
 
-from automataleague.envs.parkour import build_parkour_model
-from automataleague.envs.parkour.observation import build_observation
-from automataleague.envs.parkour.navigation import checkpoint_geometry
-from automataleague.envs.parkour.state import extract_state
+from automataleague_parkour.envs.parkour import build_parkour_model
+from automataleague_parkour.envs.parkour.observation import build_observation
+from automataleague_parkour.envs.parkour.navigation import checkpoint_geometry
+from automataleague_parkour.envs.parkour.state import extract_state
 
 
 def test_observation_shape_matches_robot_obs_dim():

@@ -1,7 +1,7 @@
 import torch
 
-from automataleague.envs.parkour import build_parkour_model
-from automataleague.envs.parkour.state import extract_state
+from automataleague_parkour.envs.parkour import build_parkour_model
+from automataleague_parkour.envs.parkour.state import extract_state
 
 
 def test_extract_state_home_pose():

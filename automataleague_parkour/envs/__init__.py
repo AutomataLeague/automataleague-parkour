@@ -1,6 +1,6 @@
 """Task environments for the league (parkour now; boxing/sumo/... later)."""
 
-from automataleague.envs.registry import (  # noqa: F401
+from automataleague_parkour.envs.registry import (  # noqa: F401
     EnvSpec,
     ENVIRONMENTS,
     get_env_spec,

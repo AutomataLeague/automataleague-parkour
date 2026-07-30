@@ -14,8 +14,8 @@ from torchrl.objectives import ClipPPOLoss, group_optimizers
 from torchrl.objectives.value.advantages import GAE
 from torchrl.record.loggers import generate_exp_name, get_logger
 
-from automataleague.training.env import make_environment, rollout_video, log_metrics
-from automataleague.training.models import make_ppo_models, _pad_obs_input
+from automataleague_parkour.training.env import make_environment, rollout_video, log_metrics
+from automataleague_parkour.training.models import make_ppo_models, _pad_obs_input
 
 OUTCOME_NAMES = {0: "ongoing", 1: "success", 2: "fell", 3: "off_path"}
 

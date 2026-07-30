@@ -3,7 +3,7 @@ import os
 os.environ.setdefault("MUJOCO_GL", "egl")
 import numpy as np
 import torch
-from automataleague import make_env
+from automataleague_parkour import make_env
 
 
 def _const_reward(state, prev_dist, cur_dist, reached_intermediate, reached_finish,

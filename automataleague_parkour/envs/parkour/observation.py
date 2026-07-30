@@ -16,8 +16,8 @@ from __future__ import annotations
 import torch
 from torch import Tensor
 
-from automataleague.envs.parkour.spatial import projected_gravity, quat_rotate_inverse
-from automataleague.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour.spatial import projected_gravity, quat_rotate_inverse
+from automataleague_parkour.envs.parkour.state import ParkourState
 
 
 def build_observation(

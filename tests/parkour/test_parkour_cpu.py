@@ -1,6 +1,6 @@
 import numpy as np
 
-from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU
+from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
 
 
 def test_reset_returns_correct_obs_dim():

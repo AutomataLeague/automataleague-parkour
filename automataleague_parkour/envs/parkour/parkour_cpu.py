@@ -10,12 +10,12 @@ import mujoco
 import numpy as np
 import torch
 
-from automataleague.envs.parkour.config import (
+from automataleague_parkour.envs.parkour.config import (
     ParkourConfig,
     RewardConfig,
     TerminationConfig,
 )
-from automataleague.envs.parkour.navigation import (
+from automataleague_parkour.envs.parkour.navigation import (
     advance_checkpoints,
     centerline_frame,
     checkpoint_geometry,
@@ -23,12 +23,12 @@ from automataleague.envs.parkour.navigation import (
     point_to_polyline_distance,
     race_nav,
 )
-from automataleague.envs.parkour import height_scan as hs
-from automataleague.envs.parkour.observation import build_observation
-from automataleague.envs.parkour.rewards import compute_reward
-from automataleague.envs.parkour.scene import build_parkour_model
-from automataleague.envs.parkour.state import extract_state
-from automataleague.envs.parkour.termination import compute_termination
+from automataleague_parkour.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour.observation import build_observation
+from automataleague_parkour.envs.parkour.rewards import compute_reward
+from automataleague_parkour.envs.parkour.scene import build_parkour_model
+from automataleague_parkour.envs.parkour.state import extract_state
+from automataleague_parkour.envs.parkour.termination import compute_termination
 
 
 class ParkourEnvCPU:

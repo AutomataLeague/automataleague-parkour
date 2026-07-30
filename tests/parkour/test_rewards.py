@@ -1,8 +1,8 @@
 import torch
 
-from automataleague.envs.parkour.config import RewardConfig
-from automataleague.envs.parkour.rewards import compute_reward
-from automataleague.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour.config import RewardConfig
+from automataleague_parkour.envs.parkour.rewards import compute_reward
+from automataleague_parkour.envs.parkour.state import ParkourState
 
 
 def _upright_state(N=1):

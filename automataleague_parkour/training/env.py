@@ -7,7 +7,7 @@ from tensordict import TensorDict
 from torchrl.envs import Compose, ExplorationType, TransformedEnv, set_exploration_type
 from torchrl.envs.transforms import InitTracker, RewardSum, StepCounter
 
-from automataleague.envs.registry import get_env_spec
+from automataleague_parkour.envs.registry import get_env_spec
 
 _COURSE_KEYS = ("track", "length", "half_width", "checkpoint_spacing", "finish_offset",
                 "level_difficulty", "height_scan", "randomize_obstacles", "dr_low",
@@ -21,7 +21,7 @@ def log_metrics(logger, metrics, step):
 
 def configs_from_cfg(cfg):
     """ParkourConfig/RewardConfig/TerminationConfig from a Hydra cfg, registry-backed."""
-    from automataleague.envs.parkour.config import RewardConfig, TerminationConfig
+    from automataleague_parkour.envs.parkour.config import RewardConfig, TerminationConfig
 
     level = 0
     if hasattr(cfg.env, "course"):
@@ -56,7 +56,7 @@ def env_maker(cfg, num_envs=None, eval_mode=False):
     eval_mode forces obstacle DR off, so eval measures the clean nominal difficulty
     (factor 1.0) — the comparable, official course — while training randomizes.
     """
-    from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp
+    from automataleague_parkour.envs.parkour.parkour_warp import ParkourEnvWarp
 
     device = cfg.network.device or "cuda"
     course, rc, tc = configs_from_cfg(cfg)
@@ -101,7 +101,7 @@ def rollout_video(policy, cfg, max_steps=None, policy_device="cuda", render_size
     (finish / fall / off-path), so a completing policy yields a full-lap clip that
     isn't chopped mid-course by the step cap. `max_steps` is then just an upper bound.
     """
-    from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU
+    from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
 
     course, rc, tc = configs_from_cfg(cfg)
     env = ParkourEnvCPU(

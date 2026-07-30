@@ -17,10 +17,10 @@ from dataclasses import dataclass, field
 import mujoco
 import numpy as np
 
-from automataleague.envs.parkour.config import ParkourConfig
-from automataleague.envs.parkour.obstacles import add_obstacles
-from automataleague.envs.parkour.tracks import Track
-from automataleague.robots import RobotSpec, get_robot
+from automataleague_parkour.envs.parkour.config import ParkourConfig
+from automataleague_parkour.envs.parkour.obstacles import add_obstacles
+from automataleague_parkour.envs.parkour.tracks import Track
+from automataleague_parkour.robots import RobotSpec, get_robot
 
 # Restrained palette (single warm accent = yellow checkpoints; calm green finish).
 _YELLOW = [0.95, 0.82, 0.20, 1.0]       # checkpoint stripes
