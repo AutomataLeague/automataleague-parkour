@@ -6,8 +6,9 @@
 
 The parkour competition environment of the **Automata League**: a robot learns to run
 **parkour courses** (tracks with obstacles it must overcome to reach the finish) in
-[MuJoCo](https://mujoco.org/). Boston Dynamics **Spot** is the example robot, but you can
-plug in your own (see [Adding a custom robot](#adding-a-custom-robot)). The examples train
+[MuJoCo](https://mujoco.org/). Boston Dynamics **Spot** and Unitree **Go1** ship as example
+robots; plug in your own the same way (see [Adding a custom robot](#adding-a-custom-robot),
+which walks through how Go1 was added). The examples train
 with [TorchRL](https://github.com/pytorch/rl) PPO, GPU parallel via
 [MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp); any other TorchRL agent can
 be used the same way (see [Training](#training)).
@@ -88,37 +89,79 @@ the same figure is logged as `train/fps` during a training run.
 ## Adding a custom robot
 
 A robot is a `RobotSpec` (`automataleague/robots/base.py`), the whole contract a task
-needs. Observation and action sizes are **derived from the joint count**, so any robot
-plugs into the task unchanged.
+needs. Observation and action sizes are **derived from the joint count**, so a robot with
+a different number of legs or joints plugs into the same env, reward, and PPO code with no
+changes to any of them.
 
-1. Add `automataleague/robots/<name>.py` with a factory:
+Unitree **Go1** is the worked example. It is nothing like Spot: half the standing height
+(0.27 m vs 0.46 m), a different joint naming scheme, and a stock MuJoCo Menagerie model.
+Adding it took the three steps below and one asset fix. The full result is
+`automataleague/robots/unitree_go1.py`; here is what each step actually involved.
+
+**1. Vendor the model.** Drop the MJCF and its meshes under `assets/<name>/`, keeping the
+upstream `LICENSE`. Go1 came from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)
+(`unitree_go1/`).
+
+One asset fix was needed: Menagerie sets a default geom `margin="0.001"`, which the Warp
+backend rejects (`non-zero margin with MULTICCD`). Removing that one attribute from
+`go1.xml` was the only edit to the model. Worth knowing before you vendor any Menagerie robot.
+
+**2. Write the factory** in `automataleague/robots/<name>.py`. Every field is read off the
+model's own docs / the `home` keyframe:
 
 ```python
 from automataleague.robots.base import RobotSpec
 
-def make_myrobot() -> RobotSpec:
+def make_go1() -> RobotSpec:
     return RobotSpec(
-        name="myrobot",
-        mjcf_path="/abs/path/to/robot.xml",   # MJCF plus its mesh assets
-        base_body="base",                      # floating base body name (unprefixed)
-        nominal_height=0.5,                    # standing height (m)
-        joint_names=[...],                     # actuated joints, canonical order
-        actuator_names=[...],                  # same order as joint_names
-        home_joint_qpos=[...],                 # standing stance (radians), per joint
+        name="go1",
+        mjcf_path=_GO1_XML,                    # assets/unitree_go1/go1.xml
+        base_body="trunk",                     # floating base body name (unprefixed)
+        nominal_height=0.27,                   # standing height from the home keyframe (m)
+        joint_names=_JOINTS,                   # 12 leg joints, canonical order
+        actuator_names=_ACTUATORS,             # same order as joint_names
+        home_joint_qpos=_HOME_QPOS,            # standing stance: (hip 0, thigh 0.9, calf -1.8) x4
         action_scale=0.3,                      # q_target = home + action_scale * action
+        foot_geom_names=["FR", "FL", "RR", "RL"],  # feet, for the optional gait reward
     )
 ```
 
-2. Register it in `automataleague/robots/__init__.py`:
+The two things that matter most:
+
+* **Joint order is the contract.** `joint_names`, `actuator_names`, and `home_joint_qpos`
+  must line up index for index, and match the actuator order in the MJCF. Get this wrong and
+  the policy drives the wrong joint. Go1's order is front-right, front-left, rear-right,
+  rear-left, each leg hip then thigh then calf.
+* **`home_joint_qpos` is the stance the policy perturbs around.** Actions are offsets from
+  it (`q_target = home + action_scale * action`), so a good standing pose is what makes
+  locomotion learnable. Read it from the model's `home` keyframe.
+
+`foot_geom_names` is optional: name the foot geoms and the foot air-time gait reward can
+find them (see [Adding a custom reward](#adding-a-custom-reward)). Leave it empty to skip.
+
+**3. Register it** in `automataleague/robots/__init__.py`:
 
 ```python
-ROBOTS = {"spot": make_spot, "myrobot": make_myrobot}
+ROBOTS = {"spot": make_spot, "go1": make_go1}
 ```
 
-3. Use it: `make_env("parkour-1", robot="myrobot")`, or train with
-   `uv run python examples/ppo_single.py env.robot=myrobot`.
+That is all. Now use it anywhere Spot goes:
 
-See `automataleague/robots/spot.py` for a complete example.
+```python
+env = make_env("parkour-1", robot="go1", backend="warp", num_envs=2048)
+```
+```bash
+uv run python examples/ppo_single.py env.robot=go1
+```
+
+The PPO networks size themselves from the env's obs/action specs, so the same
+`examples/ppo_single.py` trains Go1 with no code change. Different robots often want a
+different reward though: Go1 walks cleanly once the foot air-time gait term is on. That is
+what the `reward_fn` hook in the next section is for, and why the reward travels with the
+robot while the env stays fixed.
+
+Compare `automataleague/robots/spot.py` and `automataleague/robots/unitree_go1.py` side by
+side to see exactly what changes from one robot to the next.
 
 ## Adding a custom reward
 
@@ -164,4 +207,5 @@ Then expose it under `reward_weights` in `examples/config_ppo.yaml` to control i
 
 ## Credits
 
-Spot model © Boston Dynamics, from MuJoCo Menagerie (Apache 2.0). See `assets/spot/LICENSE`.
+* Spot model © Boston Dynamics, from MuJoCo Menagerie (Apache 2.0). See `assets/spot/LICENSE`.
+* Go1 model © Unitree Robotics, from MuJoCo Menagerie (BSD 3-Clause). See `assets/unitree_go1/LICENSE`.
