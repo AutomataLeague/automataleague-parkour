@@ -73,7 +73,7 @@ Throughput of the batched MuJoCo Warp env for `parkour-1` (level 2, height scan 
 measured as total environment steps per second across all parallel envs. Throughput climbs
 with `num_envs` as parallelism amortizes the fixed cost of each step.
 
-Measured across GPU variants, the batched env reaches roughly **30k environment steps per
+Measured across GPU variants, the batched env reaches roughly **13k environment steps per
 second**. For reference, the single environment CPU backend (used for rendering and
 evaluation) runs at about 1.2k env steps per second.
 
