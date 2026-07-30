@@ -12,7 +12,7 @@ indices, home pose, and centerline that a task/renderer needs.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import mujoco
 import numpy as np
@@ -52,6 +52,8 @@ class SceneInfo:
     base_dofadr: int             # dof address of the free joint (base velocity)
     home_qpos: np.ndarray        # full model qpos for the home stance at spawn
     obstacle_dr: dict | None = None   # per-world mocap obstacle DR (see _resolve_dr)
+    foot_geom_ids: np.ndarray = field(  # (n_feet,) geom ids of the robot's feet (gait rewards)
+        default_factory=lambda: np.array([], dtype=np.int64))
 
 
 def _yaw_quat(yaw: float) -> list[float]:
@@ -251,21 +253,26 @@ def build_parkour_model(
 
 def build_race_model(
     robot: str | RobotSpec = "spot", cfg: ParkourConfig | None = None,
-    n: int = 2, lateral_gap: float = 0.6,
+    n: int = 2, lateral_gap: float = 0.6, robots=None,
 ) -> tuple[mujoco.MjModel, list[SceneInfo]]:
-    """Same track, but with ``n`` robots attached side-by-side on the start line.
+    """Same track, but with several robots attached side-by-side on the start line.
 
+    Pass ``robots`` (a list of names/RobotSpecs) to race *different* robots against
+    each other (e.g. ["spot", "go1"]); otherwise ``n`` copies of ``robot`` are placed.
     Returns the compiled model and one SceneInfo per robot (each with its own
-    base/joint/actuator addresses; the checkpoints/centerline are shared). All
-    robots share a single combined ``home_qpos`` for reset.
+    base/joint/actuator addresses; the checkpoints/centerline are shared).
     """
     cfg = cfg or ParkourConfig()
-    robot_spec = robot if isinstance(robot, RobotSpec) else get_robot(robot)
+    if robots is not None:
+        specs = [r if isinstance(r, RobotSpec) else get_robot(r) for r in robots]
+    else:
+        rs = robot if isinstance(robot, RobotSpec) else get_robot(robot)
+        specs = [rs] * n
     track = cfg.build_track()
     checkpoints = cfg.checkpoints_xy()
 
     spec = mujoco.MjSpec()
-    spec.modelname = f"race_{robot_spec.name}_{track.name}"
+    spec.modelname = f"race_{'_'.join(s.name for s in specs)}_{track.name}"
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
     spec.option.cone = mujoco.mjtCone.mjCONE_ELLIPTIC
     spec.option.impratio = 100.0
@@ -283,23 +290,23 @@ def build_race_model(
     yaw = track.spawn_heading
     lat = (-math.sin(yaw), math.cos(yaw))          # perpendicular to the start heading
     placed = []
-    for i in range(n):
-        off = (i - (n - 1) / 2) * lateral_gap
+    for i, rspec in enumerate(specs):
+        off = (i - (len(specs) - 1) / 2) * lateral_gap
         px, py = sx + lat[0] * off, sy + lat[1] * off
-        prefix = f"{robot_spec.name}{i}/"
+        prefix = f"{rspec.name}{i}/"
         frame = spec.worldbody.add_frame(pos=[px, py, 0.0])
-        spec.attach(robot_spec.load_spec(), prefix=prefix, frame=frame)
-        placed.append((prefix, (px, py)))
+        spec.attach(rspec.load_spec(), prefix=prefix, frame=frame)
+        placed.append((prefix, rspec, (px, py)))
 
     model = spec.compile()
     home = mujoco.MjData(model).qpos.copy().astype(np.float32)
     infos = []
-    for prefix, (px, py) in placed:
-        info = _resolve_scene_info(model, robot_spec, cfg, track, checkpoints,
+    for prefix, rspec, (px, py) in placed:
+        info = _resolve_scene_info(model, rspec, cfg, track, checkpoints,
                                    prefix, spawn=(px, py))
-        home[info.base_qposadr:info.base_qposadr + 3] = [px, py, robot_spec.nominal_height]
+        home[info.base_qposadr:info.base_qposadr + 3] = [px, py, rspec.nominal_height]
         home[info.base_qposadr + 3:info.base_qposadr + 7] = _yaw_quat(yaw)
-        home[info.joint_qposadr] = robot_spec.home_joint_qpos
+        home[info.joint_qposadr] = rspec.home_joint_qpos
         infos.append(info)
     for info in infos:
         info.home_qpos = home                      # shared combined reset pose
@@ -321,6 +328,9 @@ def _resolve_scene_info(
     joint_ids = np.array([jid(n) for n in robot.joint_names], dtype=np.int64)
     joint_qposadr = model.jnt_qposadr[joint_ids].astype(np.int64)
     joint_dofadr = model.jnt_dofadr[joint_ids].astype(np.int64)
+    foot_geom_ids = np.array(
+        [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, prefix + g)
+         for g in robot.foot_geom_names], dtype=np.int64)
     actuator_ids = np.array(
         [mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, prefix + a)
          for a in robot.actuator_names],
@@ -347,6 +357,7 @@ def _resolve_scene_info(
         base_qposadr=base_qposadr,
         base_dofadr=base_dofadr,
         home_qpos=home,
+        foot_geom_ids=foot_geom_ids,
     )
 
 

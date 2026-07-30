@@ -73,6 +73,8 @@ class ParkourEnvWarp(EnvBase):
         device: str = "cuda",
         cfg: ParkourConfig | None = None,
         reward_cfg: RewardConfig | None = None,
+        reward_fn=None,   # custom reward fn (same signature as rewards.compute_reward);
+                          # None -> the default compute_reward. Lets a robot bring its own reward.
         term_cfg: TerminationConfig | None = None,
         frame_skip: int = 10,
         # per-world constraint/contact buffer sizes for MuJoCo-Warp. Spot is
@@ -92,6 +94,7 @@ class ParkourEnvWarp(EnvBase):
 
         self.cfg = cfg or ParkourConfig()
         self.reward_cfg = reward_cfg or RewardConfig()
+        self._reward_fn = reward_fn or compute_reward
         self.term_cfg = term_cfg or TerminationConfig()
 
         # Build the composed model + resolved scene info (Phase A).
@@ -139,6 +142,17 @@ class ParkourEnvWarp(EnvBase):
         self.prev_dist = torch.zeros(num_envs, device=d)
         self.prev_action = torch.zeros(num_envs, self._act_dim, device=d)
         self.step_count = torch.zeros(num_envs, dtype=torch.long, device=d)
+
+        # Foot air-time gait reward (see reward_cfg.feet_air_time). Off unless enabled.
+        fids = self.info.foot_geom_ids
+        if len(fids) and self.reward_cfg.feet_air_time > 0:
+            self._foot_geom_ids = torch.tensor(fids, dtype=torch.long, device=d)
+            foot_r = torch.tensor(self._mjm.geom_size[fids, 0], dtype=torch.float32, device=d)
+            self._foot_contact_h = foot_r + 0.03          # geom-center z below this = grounded
+            self._feet_air_time = torch.zeros(num_envs, len(fids), device=d)
+            self._ctrl_dt = self._frame_skip * float(self._mjm.opt.timestep)
+        else:
+            self._foot_geom_ids = None
 
         self._graph = None
         self._capture_cuda_graph()
@@ -316,6 +330,8 @@ class ParkourEnvWarp(EnvBase):
         self.cp_idx[mask] = 0
         self.step_count[mask] = 0
         self.prev_action[mask] = 0.0
+        if self._foot_geom_ids is not None:
+            self._feet_air_time[mask] = 0.0
         if self._dr is not None:
             self._randomize_obstacles(mask)
 
@@ -344,10 +360,25 @@ class ParkourEnvWarp(EnvBase):
         terminated, truncated, fell, off, outcome = compute_termination(
             st, self.step_count, fin, lateral, self.cfg.half_width, self.term_cfg
         )
-        reward, _ = compute_reward(
+        reward, _ = self._reward_fn(
             st, self.prev_dist, cur_dist, inter, fin, fell, off, actions,
             self.robot.nominal_height, self.reward_cfg, forward_vel=fwd_vel,
         )
+
+        # Foot air-time gait shaping: at each foot's touchdown, reward the swing time it
+        # just completed (relative to the target), so a clean stepping gait beats a shuffle.
+        # Only paid while moving forward, so it can't reward marching in place.
+        if self._foot_geom_ids is not None:
+            foot_z = wp.to_torch(self._mjw_data.geom_xpos)[:, self._foot_geom_ids, 2]
+            contact = foot_z < self._foot_contact_h                     # [N, n_feet]
+            first_contact = contact & (self._feet_air_time > 0)
+            air_rew = ((self._feet_air_time - self.reward_cfg.feet_air_time_target)
+                       * first_contact.float()).sum(-1)                        # [N]
+            air_rew = air_rew * (fwd_vel.reshape(-1).clamp(min=0.0) > 0.1).float()
+            reward = reward + self.reward_cfg.feet_air_time * air_rew.view_as(reward)
+            self._feet_air_time = torch.where(
+                contact, torch.zeros_like(self._feet_air_time),
+                self._feet_air_time + self._ctrl_dt)
 
         # Task-progress diagnostics, captured PRE-reset so they reflect how far the
         # episode actually got (distance to the finish line + checkpoints reached).

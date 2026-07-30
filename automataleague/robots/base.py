@@ -45,6 +45,7 @@ class RobotSpec:
     actuator_names: list[str]
     home_joint_qpos: np.ndarray
     action_scale: float = 0.3
+    foot_geom_names: list[str] = field(default_factory=list)  # foot geom names, for gait rewards
 
     def __post_init__(self):
         self.home_joint_qpos = np.asarray(self.home_joint_qpos, dtype=np.float32)

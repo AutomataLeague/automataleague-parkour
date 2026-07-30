@@ -33,9 +33,10 @@ from automataleague.envs.parkour.termination import compute_termination
 
 class ParkourEnvCPU:
     def __init__(self, robot="spot", cfg=None, reward_cfg=None, term_cfg=None,
-                 render_size=(720, 1280), frame_skip=10):
+                 render_size=(720, 1280), frame_skip=10, reward_fn=None):
         self.cfg = cfg or ParkourConfig()
         self.reward_cfg = reward_cfg or RewardConfig()
+        self._reward_fn = reward_fn or compute_reward   # custom reward fn or the default
         self.term_cfg = term_cfg or TerminationConfig()
         self.frame_skip = frame_skip
         self.model, self.info = build_parkour_model(robot, self.cfg)
@@ -117,7 +118,7 @@ class ParkourEnvCPU:
         terminated, truncated, fell, off, outcome = compute_termination(
             st, self.step_count, fin, lateral, self.cfg.half_width, self.term_cfg)
         act_t = torch.tensor(action, dtype=torch.float32).unsqueeze(0)
-        reward, comps = compute_reward(
+        reward, comps = self._reward_fn(
             st, self.prev_dist, cur_dist, inter, fin, fell, off, act_t,
             self.robot.nominal_height, self.reward_cfg, forward_vel=fwd_vel)
 

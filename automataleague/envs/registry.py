@@ -76,8 +76,13 @@ def list_environments(season: int | None = None) -> list[EnvSpec]:
 
 
 def make_env(env_id, robot="spot", level=None, backend="warp", num_envs=None,
-             reward_cfg=None, term_cfg=None, **cfg_overrides):
-    """Instantiate a registered env. backend: 'warp' (GPU, batched) | 'cpu' (single)."""
+             reward_cfg=None, reward_fn=None, term_cfg=None, **cfg_overrides):
+    """Instantiate a registered env. backend: 'warp' (GPU, batched) | 'cpu' (single).
+
+    reward_cfg tunes the default reward's weights; reward_fn (optional) replaces the
+    reward entirely with a custom callable (same signature as rewards.compute_reward,
+    returning ``(reward, components)``). If reward_fn is None the default is used.
+    """
     spec = get_env_spec(env_id)
     lvl = spec.n_levels - 1 if level is None else int(level)
     course = spec.config(lvl, **cfg_overrides)
@@ -85,10 +90,10 @@ def make_env(env_id, robot="spot", level=None, backend="warp", num_envs=None,
     tc = term_cfg if term_cfg is not None else TerminationConfig()
     if backend == "cpu":
         from automataleague.envs.parkour.parkour_cpu import ParkourEnvCPU
-        return ParkourEnvCPU(robot=robot, cfg=course, reward_cfg=rc, term_cfg=tc)
+        return ParkourEnvCPU(robot=robot, cfg=course, reward_cfg=rc, reward_fn=reward_fn, term_cfg=tc)
     if backend == "warp":
         from automataleague.envs.parkour.parkour_warp import ParkourEnvWarp  # GPU-only
         return ParkourEnvWarp(
             robot=robot, num_envs=num_envs or 2048, cfg=course,
-            reward_cfg=rc, term_cfg=tc)
+            reward_cfg=rc, reward_fn=reward_fn, term_cfg=tc)
     raise ValueError(f"Unknown backend '{backend}' (use 'warp' or 'cpu')")

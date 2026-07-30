@@ -10,9 +10,11 @@ from typing import Callable
 
 from automataleague.robots.base import RobotSpec
 from automataleague.robots.spot import make_spot
+from automataleague.robots.unitree_go1 import make_go1
 
 ROBOTS: dict[str, Callable[[], RobotSpec]] = {
     "spot": make_spot,
+    "go1": make_go1,
 }
 
 

@@ -136,7 +136,25 @@ env = make_env("parkour-1", robot="spot",
 uv run python examples/ppo_single.py env.reward_weights.forward=2.0 env.reward_weights.alive=-0.01
 ```
 
-**Add a new term** (two edits):
+**Bring your own reward function**: pass `reward_fn` to `make_env` to replace the reward
+entirely. It takes the same arguments as `compute_reward` (`rewards.py`) and returns
+`(reward, components)`; if omitted, the default is used. Different robots often want
+different rewards, so this lets the reward travel with the robot while the env stays fixed.
+
+```python
+import torch
+from automataleague import make_env
+
+def my_reward(state, prev_dist, cur_dist, reached_intermediate, reached_finish,
+              fell, off_path, action, nominal_height, rc, forward_vel=None):
+    progress = prev_dist - cur_dist                       # distance closed toward the goal
+    reward = rc.progress * progress + rc.success * reached_finish.float()
+    return reward, {}                                     # (reward tensor, components dict)
+
+env = make_env("parkour-1", robot="go1", reward_fn=my_reward)
+```
+
+**Add a new term to the default** (two edits):
 
 1. Add a weight field to `RewardConfig` in `config.py` (e.g. `energy: float = 0.0`).
 2. Compute the term in `compute_reward` (`rewards.py`) and add it to the returned sum,

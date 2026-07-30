@@ -93,6 +93,11 @@ class RewardConfig:
     joint_vel: float = 0.001     # penalty on joint velocity (smoothness/energy)
     fall: float = 10.0           # one-off penalty (negative) when the robot falls
     off_path: float = 25.0       # one-off penalty (negative) + terminate when off the path
+    # Foot air-time gait reward (Warp env only): rewards each foot for staying airborne
+    # ~feet_air_time_target seconds before touchdown, which produces a clean stepping gait
+    # instead of a shuffle/drag. Only paid while moving. Default 0 = off (Spot unaffected).
+    feet_air_time: float = 0.0
+    feet_air_time_target: float = 0.25   # seconds; target swing duration per step
 
 
 @dataclass

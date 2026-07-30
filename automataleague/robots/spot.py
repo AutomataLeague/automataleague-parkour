@@ -37,4 +37,5 @@ def make_spot() -> RobotSpec:
         actuator_names=list(_JOINTS),  # actuators share joint names in spot.xml
         home_joint_qpos=_HOME_QPOS,
         action_scale=0.3,  # ~17 deg of offset around the stance; tuned in Phase B
+        foot_geom_names=["FL", "FR", "HL", "HR"],
     )
