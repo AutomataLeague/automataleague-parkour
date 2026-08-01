@@ -28,6 +28,13 @@ class ParkourConfig:
     # anticipate obstacles instead of feeling them only on contact. ---
     height_scan: bool = False
 
+    # --- path preview (see path_preview.py). When True, append lookahead points
+    # along the track centerline (in the base frame) plus the signed lateral
+    # offset to the observation (obs_dim += preview_dim(preview_distances)). Lets
+    # the policy see upcoming curves instead of reacting to heading error alone. ---
+    path_preview: bool = False
+    preview_distances: tuple = (1.5, 3.0, 4.5, 6.0)  # lookahead distances (metres)
+
     # --- obstacle domain randomization (mocap-based, see obstacles.py). When True,
     # each episode draws a per-env difficulty factor ~ U(dr_low, dr_high) per DR
     # obstacle, with level_difficulty's value as the mean. Eval keeps factor = 1.
