@@ -9,6 +9,7 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 import torch
+from torchrl.data import Composite, Unbounded
 
 from automataleague_parkour.envs.parkour.config import (
     ParkourConfig,
@@ -24,6 +25,7 @@ from automataleague_parkour.envs.parkour.navigation import (
     race_nav,
 )
 from automataleague_parkour.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour import path_preview
 from automataleague_parkour.envs.parkour.observation import build_observation
 from automataleague_parkour.envs.parkour.rewards import compute_reward
 from automataleague_parkour.envs.parkour.scene import build_parkour_model
@@ -45,6 +47,7 @@ class ParkourEnvCPU:
 
         self._checkpoints = torch.tensor(self.info.checkpoints_xy, dtype=torch.float32)
         self._centerline = torch.tensor(self.info.centerline, dtype=torch.float32)
+        self._cumlen = path_preview.cumulative_length(self._centerline)
         self._race_mode = bool(self.cfg.race_mode)
         self._cp_tangent = (centerline_frame(self._checkpoints, self._centerline)[1]
                             if self._race_mode else None)
@@ -54,6 +57,18 @@ class ParkourEnvCPU:
         self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
                               else self.robot.action_scale)
         self._scan_offsets = hs.scan_offsets() if self.cfg.height_scan else None
+        self._preview_on = bool(self.cfg.path_preview)
+        self._preview_dist = tuple(self.cfg.preview_distances)
+
+        self._obs_dim = (
+            self.robot.obs_dim
+            + (hs.SCAN_N if self.cfg.height_scan else 0)
+            + (path_preview.preview_dim(self._preview_dist) if self._preview_on else 0)
+        )
+        self.observation_spec = Composite(
+            observation=Unbounded(shape=(self._obs_dim,), dtype=torch.float32),
+            shape=torch.Size([]),
+        )
 
         self._renderer = None
         self._render_size = render_size
@@ -78,11 +93,21 @@ class ParkourEnvCPU:
         rel = hs.scan_relative(terrain_z, base_z, self.robot.nominal_height)
         return torch.tensor(rel, dtype=torch.float32).unsqueeze(0)
 
+    def _preview(self, st):
+        """Lookahead centerline preview [1, preview_dim] in the robot's base frame."""
+        if not self._preview_on:
+            return None
+        return path_preview.track_preview(
+            st.base_pos[:, :2], st.base_quat, self._centerline, self._cumlen,
+            self._preview_dist, closed=True,
+        )
+
     def _obs(self):
         st = self._state()
         to_cp, dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
         return build_observation(st, to_cp, dist, herr, self.prev_action,
-                                 self._home_joint, height_scan=self._scan())
+                                 self._home_joint, height_scan=self._scan(),
+                                 track_preview=self._preview(st))
 
     def reset(self):
         self.data.qpos[:] = self.info.home_qpos

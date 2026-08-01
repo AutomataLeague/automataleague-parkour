@@ -34,6 +34,7 @@ from automataleague_parkour.envs.parkour.navigation import (
     race_nav,
 )
 from automataleague_parkour.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour import path_preview
 from automataleague_parkour.envs.parkour.observation import build_observation
 from automataleague_parkour.envs.parkour.rewards import compute_reward
 from automataleague_parkour.envs.parkour.scene import build_parkour_model
@@ -110,7 +111,13 @@ class ParkourEnvWarp(EnvBase):
         self._nv = self._mjm.nv
         self._nu = self._mjm.nu
         self._scan_on = bool(self.cfg.height_scan)
-        self._obs_dim = self.robot.obs_dim + (hs.SCAN_N if self._scan_on else 0)
+        self._preview_on = bool(self.cfg.path_preview)
+        self._preview_dist = tuple(self.cfg.preview_distances)
+        self._obs_dim = (
+            self.robot.obs_dim
+            + (hs.SCAN_N if self._scan_on else 0)
+            + (path_preview.preview_dim(self._preview_dist) if self._preview_on else 0)
+        )
         self._act_dim = self.robot.action_dim
         self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
                               else self.robot.action_scale)
@@ -120,6 +127,7 @@ class ParkourEnvWarp(EnvBase):
         self._checkpoints = torch.tensor(self.info.checkpoints_xy, dtype=torch.float32, device=d)
         self._num_cp = self._checkpoints.shape[0]
         self._centerline = torch.tensor(self.info.centerline, dtype=torch.float32, device=d)
+        self._cumlen = path_preview.cumulative_length(self._centerline)
         self._race_mode = bool(self.cfg.race_mode)
         # gate tangents (track direction at each checkpoint) for race-mode gate crossing
         self._cp_tangent = (centerline_frame(self._checkpoints, self._centerline)[1]
@@ -268,6 +276,13 @@ class ParkourEnvWarp(EnvBase):
         terrain_z = torch.where(dist_t >= 0, hs._RAY_H - dist_t, torch.zeros_like(dist_t))
         return hs.scan_relative_torch(terrain_z, base_z, self.robot.nominal_height)
 
+    def _compute_preview(self, st):
+        """Batched lookahead centerline preview [N, preview_dim], in each robot's base frame."""
+        return path_preview.track_preview(
+            st.base_pos[:, :2], st.base_quat, self._centerline, self._cumlen,
+            self._preview_dist, closed=True,
+        )
+
     def _capture_cuda_graph(self):
         mjw.step(self._mjw_model, self._mjw_data)
         wp.synchronize()
@@ -396,9 +411,10 @@ class ParkourEnvWarp(EnvBase):
         to_cp, dist_after, herr = checkpoint_geometry(st_after, self._checkpoints, self.cp_idx)
         self.prev_dist = dist_after
         scan = self._compute_scan(st_after) if self._scan_on else None
+        prev = self._compute_preview(st_after) if self._preview_on else None
         obs = build_observation(
             st_after, to_cp, dist_after, herr, self.prev_action, self._home_joint,
-            height_scan=scan,
+            height_scan=scan, track_preview=prev,
         )
 
         return TensorDict(
@@ -427,8 +443,9 @@ class ParkourEnvWarp(EnvBase):
         to_cp, dist, herr = checkpoint_geometry(st, self._checkpoints, self.cp_idx)
         self.prev_dist = dist
         scan = self._compute_scan(st) if self._scan_on else None
+        prev = self._compute_preview(st) if self._preview_on else None
         obs = build_observation(st, to_cp, dist, herr, self.prev_action, self._home_joint,
-                                height_scan=scan)
+                                height_scan=scan, track_preview=prev)
 
         return TensorDict(
             {
