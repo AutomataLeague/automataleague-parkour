@@ -64,6 +64,38 @@ def centerline_frame(points: Tensor, polyline: Tensor) -> tuple[Tensor, Tensor]:
     return lateral, tang[seg]
 
 
+def centerline_project(
+    points: Tensor, polyline: Tensor, cumlen: Tensor
+) -> tuple[Tensor, Tensor, Tensor]:
+    """Arc-length, signed lateral, and unit tangent of each point's nearest-segment
+    projection onto the centerline polyline.
+
+    Same nearest-segment search as centerline_frame, plus the arc-length coordinate
+    (cumlen[seg] + t * seglen[seg]) and the SIGNED lateral offset (positive left of
+    travel, negative right of travel: cross product of the unit tangent with the
+    point-minus-projection vector).
+    """
+    a, b = polyline[:-1], polyline[1:]                # [S,2]
+    ab = b - a
+    ab2 = (ab * ab).sum(-1).clamp(min=1e-9)
+    seglen = ab2.sqrt()
+    tang = ab / seglen.unsqueeze(-1)                  # [S,2] unit tangents
+    p = points.unsqueeze(1)                           # [N,1,2]
+    ap = p - a.unsqueeze(0)
+    t = ((ap * ab.unsqueeze(0)).sum(-1) / ab2).clamp(0.0, 1.0)   # [N,S]
+    proj = a.unsqueeze(0) + t.unsqueeze(-1) * ab.unsqueeze(0)    # [N,S,2]
+    dist = torch.linalg.norm(p - proj, dim=-1)         # [N,S]
+    seg = dist.argmin(dim=1)                            # [N] nearest segment
+
+    tsel = t.gather(1, seg.unsqueeze(1)).squeeze(1)     # [N]
+    s0 = cumlen[seg] + tsel * seglen[seg]                # [N]
+    tg = tang[seg]                                       # [N,2]
+    proj_sel = proj.gather(1, seg.view(-1, 1, 1).expand(-1, 1, 2)).squeeze(1)  # [N,2]
+    rel = points - proj_sel                              # [N,2]
+    signed = tg[:, 0] * rel[:, 1] - tg[:, 1] * rel[:, 0]  # cross(tangent, rel)
+    return s0, signed, tg
+
+
 def race_nav(
     base_xy: Tensor, base_linvel_xy: Tensor, centerline: Tensor,
     checkpoints_xy: Tensor, cp_tangent: Tensor, cp_idx: Tensor, num_cp: int
