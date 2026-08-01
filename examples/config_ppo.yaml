@@ -27,6 +27,11 @@ env:
     #   env.course.race_mode=true env.reward_weights.progress=0 env.reward_weights.checkpoint=0 \
     #   env.reward_weights.alive=-0.03 env.reward_weights.target_speed=2.5 env.reward_weights.forward=2.0
     race_mode: false
+    # racing perception: append K centerline lookahead points ahead of the agent (in its
+    # own frame) plus the signed lateral offset, so it can see the track shape and plan a
+    # line instead of beelining to gate centres. Count and distances are set here.
+    path_preview: false
+    preview_distances: [1.5, 3.0, 4.5, 6.0]   # arc-length metres ahead; obs grows by 2*len+1
 
   # Forward-velocity is the dense locomotion driver (makes moving beat standing);
   # progress adds goal shaping; success/checkpoint are the big goal bonuses.
