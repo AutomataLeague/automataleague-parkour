@@ -94,9 +94,15 @@ def make_ppo_models(cfg, train_env, device):
 
 def build_actor(cfg, robot, device):
     """Rebuild the actor from config/dims without a live GPU env (stub specs)."""
-    scan_on = bool(getattr(getattr(cfg.env, "course", object()), "height_scan", False))
-    # obs grows by SCAN_N when the checkpoint was trained with the height scan.
+    course = getattr(cfg.env, "course", object())
+    scan_on = bool(getattr(course, "height_scan", False))
+    preview_on = bool(getattr(course, "path_preview", False))
+    # obs grows by SCAN_N with the height scan and by preview_dim with the path preview,
+    # matching the env's own obs_dim so a trained checkpoint loads into the rebuilt actor.
     obs_dim = robot.obs_dim + (hs.SCAN_N if scan_on else 0)
+    if preview_on:
+        from automataleague_parkour.envs.parkour.path_preview import preview_dim
+        obs_dim += preview_dim(getattr(course, "preview_distances", (1.5, 3.0, 4.5, 6.0)))
 
     class _Stub:
         pass
