@@ -34,6 +34,11 @@ class ParkourConfig:
     # the policy see upcoming curves instead of reacting to heading error alone. ---
     path_preview: bool = False
     preview_distances: tuple = (1.5, 3.0, 4.5, 6.0)  # lookahead distances (metres)
+    # "centerline": each lookahead is one centerline point. "boundaries": each
+    # lookahead is a LEFT and a RIGHT corridor-edge point (at ±half_width from the
+    # centerline), so the policy sees the drivable channel and can cut the apex
+    # instead of only ever tracking the centerline.
+    preview_mode: str = "centerline"
 
     # --- obstacle domain randomization (mocap-based, see obstacles.py). When True,
     # each episode draws a per-env difficulty factor ~ U(dr_low, dr_high) per DR

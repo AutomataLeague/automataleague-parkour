@@ -102,7 +102,9 @@ def build_actor(cfg, robot, device):
     obs_dim = robot.obs_dim + (hs.SCAN_N if scan_on else 0)
     if preview_on:
         from automataleague_parkour.envs.parkour.path_preview import preview_dim
-        obs_dim += preview_dim(getattr(course, "preview_distances", (1.5, 3.0, 4.5, 6.0)))
+        preview_mode = getattr(course, "preview_mode", "centerline")
+        obs_dim += preview_dim(
+            getattr(course, "preview_distances", (1.5, 3.0, 4.5, 6.0)), preview_mode)
 
     class _Stub:
         pass

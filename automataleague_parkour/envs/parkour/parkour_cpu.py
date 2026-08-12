@@ -59,11 +59,13 @@ class ParkourEnvCPU:
         self._scan_offsets = hs.scan_offsets() if self.cfg.height_scan else None
         self._preview_on = bool(self.cfg.path_preview)
         self._preview_dist = tuple(self.cfg.preview_distances)
+        self._preview_mode = self.cfg.preview_mode
 
         self._obs_dim = (
             self.robot.obs_dim
             + (hs.SCAN_N if self.cfg.height_scan else 0)
-            + (path_preview.preview_dim(self._preview_dist) if self._preview_on else 0)
+            + (path_preview.preview_dim(self._preview_dist, self._preview_mode)
+               if self._preview_on else 0)
         )
         self.observation_spec = Composite(
             observation=Unbounded(shape=(self._obs_dim,), dtype=torch.float32),
@@ -100,6 +102,7 @@ class ParkourEnvCPU:
         return path_preview.track_preview(
             st.base_pos[:, :2], st.base_quat, self._centerline, self._cumlen,
             self._preview_dist, closed=True,
+            mode=self._preview_mode, half_width=self.cfg.half_width,
         )
 
     def _obs(self):

@@ -113,10 +113,12 @@ class ParkourEnvWarp(EnvBase):
         self._scan_on = bool(self.cfg.height_scan)
         self._preview_on = bool(self.cfg.path_preview)
         self._preview_dist = tuple(self.cfg.preview_distances)
+        self._preview_mode = self.cfg.preview_mode
         self._obs_dim = (
             self.robot.obs_dim
             + (hs.SCAN_N if self._scan_on else 0)
-            + (path_preview.preview_dim(self._preview_dist) if self._preview_on else 0)
+            + (path_preview.preview_dim(self._preview_dist, self._preview_mode)
+               if self._preview_on else 0)
         )
         self._act_dim = self.robot.action_dim
         self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
@@ -281,6 +283,7 @@ class ParkourEnvWarp(EnvBase):
         return path_preview.track_preview(
             st.base_pos[:, :2], st.base_quat, self._centerline, self._cumlen,
             self._preview_dist, closed=True,
+            mode=self._preview_mode, half_width=self.cfg.half_width,
         )
 
     def _capture_cuda_graph(self):

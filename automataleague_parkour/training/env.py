@@ -11,7 +11,8 @@ from automataleague_parkour.envs.registry import get_env_spec
 
 _COURSE_KEYS = ("track", "length", "half_width", "checkpoint_spacing", "finish_offset",
                 "level_difficulty", "height_scan", "randomize_obstacles", "dr_low",
-                "dr_high", "action_scale", "race_mode", "path_preview", "preview_distances")
+                "dr_high", "action_scale", "race_mode", "path_preview", "preview_distances",
+                "preview_mode")
 
 
 def log_metrics(logger, metrics, step):

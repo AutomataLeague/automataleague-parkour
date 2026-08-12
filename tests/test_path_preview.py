@@ -14,6 +14,10 @@ def test_preview_dim():
     assert preview_dim(DIST) == 2 * 3 + 1
 
 
+def test_preview_dim_boundaries():
+    assert preview_dim(DIST, "boundaries") == 4 * len(DIST) + 1
+
+
 def test_cumulative_length_accumulates_segment_lengths():
     # 3-4-5 triangle then a vertical drop: lengths 5, then 4.
     pl = torch.tensor([[0.0, 0.0], [3.0, 4.0], [3.0, 0.0]])
@@ -73,6 +77,44 @@ def test_lap_wrap_samples_past_start():
         base_xy, torch.tensor([[0.7071, 0, 0, -0.7071]]), pl, cum, (2.0,), closed=True
     )
     assert out.shape == (1, 3)  # runs without index error at the wrap
+
+
+def test_boundaries_straight_track_straddle_centerline():
+    # Straight track, agent centered and facing along it: the left boundary point at
+    # each lookahead sits at (d, +half_width) and the right at (d, -half_width) in the
+    # base frame (left is +y).
+    pl = torch.tensor([[0.0, 0.0], [20.0, 0.0]])
+    cum = cumulative_length(pl)
+    base_xy = torch.tensor([[5.0, 0.0]])
+    out = track_preview(base_xy, YAW0, pl, cum, DIST, closed=False,
+                         mode="boundaries", half_width=1.6)
+    assert out.shape == (1, 4 * len(DIST) + 1)
+    pts = out[0, :-1].reshape(len(DIST), 4)  # [K, (lx, ly, rx, ry)]
+    left, right = pts[:, :2], pts[:, 2:]
+    assert torch.allclose(left[:, 0], torch.tensor([1.0, 2.0, 3.0]), atol=1e-3)
+    assert torch.allclose(left[:, 1], torch.full((3,), 1.6), atol=1e-3)
+    assert torch.allclose(right[:, 0], torch.tensor([1.0, 2.0, 3.0]), atol=1e-3)
+    assert torch.allclose(right[:, 1], torch.full((3,), -1.6), atol=1e-3)
+    assert torch.allclose(out[0, -1], torch.tensor(0.0), atol=1e-3)  # centered -> lateral 0
+
+
+def test_boundaries_left_curve_straddle_centerline():
+    # Quarter circle turning left. The left/right boundary points must straddle the
+    # centerline sample (their midpoint equals it), and the inner (left) boundary must
+    # sit closer to the turn's center than the outer (right) one.
+    th = torch.linspace(0, torch.pi / 2, 50)
+    pl = torch.stack([torch.sin(th) * 10, (1 - torch.cos(th)) * 10], -1)
+    cum = cumulative_length(pl)
+    dists = (2.0, 4.0, 6.0)
+    boundary = track_preview(pl[0:1], YAW0, pl, cum, dists, closed=False,
+                              mode="boundaries", half_width=1.6)
+    centerline = track_preview(pl[0:1], YAW0, pl, cum, dists, closed=False)
+    pts = boundary[0, :-1].reshape(len(dists), 4)
+    left, right = pts[:, :2], pts[:, 2:]
+    mid = (left + right) / 2.0
+    center_pts = centerline[0, :-1].reshape(len(dists), 2)
+    assert torch.allclose(mid, center_pts, atol=1e-3)
+    assert (left[:, 1] > right[:, 1]).all()  # left boundary is toward the turn's inside
 
 
 def test_batched_equals_single():

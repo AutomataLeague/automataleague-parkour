@@ -1,5 +1,6 @@
 import torch
 from automataleague_parkour import make_env
+from automataleague_parkour.envs.parkour.path_preview import preview_dim
 
 
 def test_cpu_obs_dim_grows_with_preview():
@@ -14,6 +15,34 @@ def test_cpu_obs_dim_grows_with_preview():
     obs = on.reset()
     assert obs.shape[-1] == d_on
     assert torch.isfinite(torch.as_tensor(obs)).all()
+
+
+def test_cpu_obs_dim_grows_with_boundaries_preview():
+    dists = (1.5, 3.0, 4.5, 6.0)
+    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
+    on = make_env("parkour-1", robot="spot", level=0, backend="cpu",
+                  path_preview=True, preview_mode="boundaries", preview_distances=dists)
+    d_off = off.observation_spec["observation"].shape[-1]
+    d_on = on.observation_spec["observation"].shape[-1]
+    assert d_on == d_off + preview_dim(dists, "boundaries")
+    obs = on.reset()
+    assert obs.shape[-1] == d_on
+    assert torch.isfinite(torch.as_tensor(obs)).all()
+
+
+def test_cpu_obs_dim_centerline_mode_is_the_default():
+    # preview_mode defaults to "centerline"; passing it explicitly must not change
+    # obs_dim, and it must match the plain preview_dim formula (backward compatible).
+    dists = (1.5, 3.0, 4.5, 6.0)
+    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
+    default = make_env("parkour-1", robot="spot", level=0, backend="cpu",
+                       path_preview=True, preview_distances=dists)
+    explicit = make_env("parkour-1", robot="spot", level=0, backend="cpu",
+                        path_preview=True, preview_mode="centerline", preview_distances=dists)
+    d_off = off.observation_spec["observation"].shape[-1]
+    d_default = default.observation_spec["observation"].shape[-1]
+    d_explicit = explicit.observation_spec["observation"].shape[-1]
+    assert d_default == d_explicit == d_off + preview_dim(dists)
 
 
 def test_flag_off_is_unchanged():
