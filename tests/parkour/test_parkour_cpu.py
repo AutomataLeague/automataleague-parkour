@@ -1,17 +1,22 @@
 import numpy as np
 
+from automataleague_parkour.envs.parkour.config import ParkourConfig
 from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
+
+# Perception off so the observation is the bare robot.obs_dim; the default config now
+# turns boundary track perception on (see tests/test_env_preview_cpu.py for that).
+_BARE = ParkourConfig(track_perception="none")
 
 
 def test_reset_returns_correct_obs_dim():
-    env = ParkourEnvCPU(robot="spot")
+    env = ParkourEnvCPU(robot="spot", cfg=_BARE)
     obs = env.reset()
     assert obs.shape == (env.robot.obs_dim,)
     assert np.isfinite(obs).all()
 
 
 def test_step_runs_and_returns_finite():
-    env = ParkourEnvCPU(robot="spot")
+    env = ParkourEnvCPU(robot="spot", cfg=_BARE)
     env.reset()
     obs, rew, term, trunc, info = env.step(np.zeros(env.robot.n_joints, dtype=np.float32))
     assert obs.shape == (env.robot.obs_dim,)

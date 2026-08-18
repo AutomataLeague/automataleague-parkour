@@ -57,9 +57,8 @@ class ParkourEnvCPU:
         self._action_scale = (self.cfg.action_scale if self.cfg.action_scale is not None
                               else self.robot.action_scale)
         self._scan_offsets = hs.scan_offsets() if self.cfg.height_scan else None
-        self._preview_on = bool(self.cfg.path_preview)
+        self._preview_on, self._preview_mode = path_preview.resolve_perception(self.cfg)
         self._preview_dist = tuple(self.cfg.preview_distances)
-        self._preview_mode = self.cfg.preview_mode
 
         self._obs_dim = (
             self.robot.obs_dim

@@ -11,8 +11,7 @@ from automataleague_parkour.envs.registry import get_env_spec
 
 _COURSE_KEYS = ("track", "length", "half_width", "checkpoint_spacing", "finish_offset",
                 "level_difficulty", "height_scan", "randomize_obstacles", "dr_low",
-                "dr_high", "action_scale", "race_mode", "path_preview", "preview_distances",
-                "preview_mode")
+                "dr_high", "action_scale", "race_mode", "preview_distances")
 
 
 def log_metrics(logger, metrics, step):
@@ -35,6 +34,15 @@ def configs_from_cfg(cfg):
                 v = getattr(cfg.env.course, k)
                 if v is not None:            # null keeps the registry/schedule value
                     setattr(course, k, v)
+        # Perception: the new `track_perception` knob wins; else bridge the legacy
+        # path_preview+preview_mode pair (old checkpoints); else keep the default.
+        from automataleague_parkour.envs.parkour.path_preview import resolve_perception
+        tp = getattr(cfg.env.course, "track_perception", None)
+        if tp is not None:
+            course.track_perception = str(tp)
+        elif hasattr(cfg.env.course, "path_preview") or hasattr(cfg.env.course, "preview_mode"):
+            on, mode = resolve_perception(cfg.env.course)
+            course.track_perception = mode if on else "none"
 
     rc = RewardConfig()
     if hasattr(cfg.env, "reward_weights"):

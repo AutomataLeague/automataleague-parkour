@@ -111,9 +111,8 @@ class ParkourEnvWarp(EnvBase):
         self._nv = self._mjm.nv
         self._nu = self._mjm.nu
         self._scan_on = bool(self.cfg.height_scan)
-        self._preview_on = bool(self.cfg.path_preview)
+        self._preview_on, self._preview_mode = path_preview.resolve_perception(self.cfg)
         self._preview_dist = tuple(self.cfg.preview_distances)
-        self._preview_mode = self.cfg.preview_mode
         self._obs_dim = (
             self.robot.obs_dim
             + (hs.SCAN_N if self._scan_on else 0)

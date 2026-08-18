@@ -15,7 +15,7 @@ def test_preview_dim():
 
 
 def test_preview_dim_boundaries():
-    assert preview_dim(DIST, "boundaries") == 4 * len(DIST) + 1
+    assert preview_dim(DIST, "boundary") == 4 * len(DIST) + 1
 
 
 def test_cumulative_length_accumulates_segment_lengths():
@@ -87,7 +87,7 @@ def test_boundaries_straight_track_straddle_centerline():
     cum = cumulative_length(pl)
     base_xy = torch.tensor([[5.0, 0.0]])
     out = track_preview(base_xy, YAW0, pl, cum, DIST, closed=False,
-                         mode="boundaries", half_width=1.6)
+                         mode="boundary", half_width=1.6)
     assert out.shape == (1, 4 * len(DIST) + 1)
     pts = out[0, :-1].reshape(len(DIST), 4)  # [K, (lx, ly, rx, ry)]
     left, right = pts[:, :2], pts[:, 2:]
@@ -107,7 +107,7 @@ def test_boundaries_left_curve_straddle_centerline():
     cum = cumulative_length(pl)
     dists = (2.0, 4.0, 6.0)
     boundary = track_preview(pl[0:1], YAW0, pl, cum, dists, closed=False,
-                              mode="boundaries", half_width=1.6)
+                              mode="boundary", half_width=1.6)
     centerline = track_preview(pl[0:1], YAW0, pl, cum, dists, closed=False)
     pts = boundary[0, :-1].reshape(len(dists), 4)
     left, right = pts[:, :2], pts[:, 2:]

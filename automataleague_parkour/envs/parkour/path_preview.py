@@ -1,13 +1,14 @@
 """Track path-preview sensor: K lookahead points ahead of the agent, in its own frame,
 plus the signed lateral offset. Batched torch (Warp + CPU). Appended to the observation
-behind the optional height scan, gated by ParkourConfig.path_preview. Mirrors height_scan.
+behind the optional height scan, selected by ParkourConfig.track_perception. Mirrors
+height_scan.
 
-Two modes, selected by ParkourConfig.preview_mode:
-  "centerline" (default): K centerline points, so the policy learns to track the
-  centerline of the corridor.
-  "boundaries": a LEFT and a RIGHT corridor-edge point per lookahead, so the policy
-  perceives the drivable channel width and can find a tighter line instead of hugging
-  the centerline.
+Three settings of ParkourConfig.track_perception:
+  "boundary" (default): a LEFT and a RIGHT corridor-edge point per lookahead, so the
+  policy perceives the drivable channel width and can find a tighter line instead of
+  hugging the centerline.
+  "centerline": K centerline points, so the policy learns to track the centerline.
+  "none": disabled (blind to the track ahead).
 """
 from __future__ import annotations
 
@@ -20,10 +21,33 @@ from automataleague_parkour.envs.parkour.navigation import centerline_project
 
 def preview_dim(distances, mode: str = "centerline") -> int:
     """Observation width for a given set of lookahead distances, plus the trailing
-    signed lateral offset. "centerline": K points (x, y). "boundaries": K point pairs,
+    signed lateral offset. "centerline": K points (x, y). "boundary": K point pairs,
     a left and a right corridor-edge point (x, y) each."""
     n = len(distances)
-    return (4 * n + 1) if mode == "boundaries" else (2 * n + 1)
+    return (4 * n + 1) if mode == "boundary" else (2 * n + 1)
+
+
+def resolve_perception(course) -> tuple[bool, str]:
+    """(on, mode) for a course cfg. Reads the single `track_perception` knob
+    (none|centerline|boundary) and falls back to the legacy `path_preview` +
+    `preview_mode` pair, so checkpoints trained before the rename still load. `mode`
+    is normalised to "centerline"/"boundary" (legacy "boundaries" maps to "boundary").
+    When a cfg specifies nothing, perception is treated as off."""
+    def get(key, default=None):
+        if hasattr(course, "get"):
+            try:
+                return course.get(key, default)
+            except Exception:
+                return default
+        return getattr(course, key, default)
+
+    tp = get("track_perception", None)
+    if tp is not None:
+        tp = str(tp).lower()
+        return (tp not in ("none", "off", "")), ("boundary" if tp == "boundary" else "centerline")
+    on = bool(get("path_preview", False))
+    mode = str(get("preview_mode", "centerline")).lower()
+    return on, ("boundary" if mode in ("boundary", "boundaries") else "centerline")
 
 
 def cumulative_length(polyline: Tensor) -> Tensor:
@@ -46,7 +70,7 @@ def _sample_at(cumlen: Tensor, polyline: Tensor, s: Tensor) -> Tensor:
 def _sample_at_tangent(cumlen: Tensor, polyline: Tensor, s: Tensor) -> tuple[Tensor, Tensor]:
     """Linear-interpolate the polyline at arc-lengths s [.] -> points [., 2], plus the
     unit tangent of the polyline segment each sample falls in [., 2]. Used by the
-    "boundaries" preview mode to place a left/right point at each lookahead."""
+    "boundary" preview mode to place a left/right point at each lookahead."""
     j = torch.searchsorted(cumlen, s.clamp(min=0.0), right=True).clamp(1, len(cumlen) - 1)
     s0, s1 = cumlen[j - 1], cumlen[j]
     w = ((s - s0) / (s1 - s0).clamp(min=1e-9)).clamp(0.0, 1.0).unsqueeze(-1)
@@ -69,7 +93,7 @@ def track_preview(
     """K lookahead points in the agent base frame (x ahead, y left), followed by the
     signed lateral offset. Returns [N, preview_dim(distances, mode)].
 
-    "centerline" mode samples the centerline itself at each lookahead. "boundaries"
+    "centerline" mode samples the centerline itself at each lookahead. "boundary"
     mode samples the LEFT and RIGHT corridor edges instead: at each lookahead
     arc-length it takes the unit track tangent of the polyline segment the sample
     falls in, the left normal n = [-tangent_y, tangent_x], and places
@@ -94,7 +118,7 @@ def track_preview(
         ly = -sn * rel[..., 0] + c * rel[..., 1]  # left
         return torch.stack([lx, ly], -1)
 
-    if mode == "boundaries":
+    if mode == "boundary":
         samples, tangents = _sample_at_tangent(cumlen, centerline, s.reshape(-1))
         samples = samples.reshape(s.shape[0], -1, 2)    # [N, K, 2]
         tangents = tangents.reshape(s.shape[0], -1, 2)  # [N, K, 2]

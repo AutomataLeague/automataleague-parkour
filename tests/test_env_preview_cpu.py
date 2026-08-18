@@ -3,10 +3,10 @@ from automataleague_parkour import make_env
 from automataleague_parkour.envs.parkour.path_preview import preview_dim
 
 
-def test_cpu_obs_dim_grows_with_preview():
-    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
+def test_cpu_obs_dim_grows_with_centerline_preview():
+    off = make_env("parkour-1", robot="spot", level=0, backend="cpu", track_perception="none")
     on = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                  path_preview=True, preview_distances=(1.5, 3.0, 4.5, 6.0))
+                  track_perception="centerline", preview_distances=(1.5, 3.0, 4.5, 6.0))
     d_off = off.observation_spec["observation"].shape[-1]
     d_on = on.observation_spec["observation"].shape[-1]
     assert d_on == d_off + 9
@@ -17,38 +17,34 @@ def test_cpu_obs_dim_grows_with_preview():
     assert torch.isfinite(torch.as_tensor(obs)).all()
 
 
-def test_cpu_obs_dim_grows_with_boundaries_preview():
+def test_cpu_obs_dim_grows_with_boundary_preview():
     dists = (1.5, 3.0, 4.5, 6.0)
-    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
+    off = make_env("parkour-1", robot="spot", level=0, backend="cpu", track_perception="none")
     on = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                  path_preview=True, preview_mode="boundaries", preview_distances=dists)
+                  track_perception="boundary", preview_distances=dists)
     d_off = off.observation_spec["observation"].shape[-1]
     d_on = on.observation_spec["observation"].shape[-1]
-    assert d_on == d_off + preview_dim(dists, "boundaries")
+    assert d_on == d_off + preview_dim(dists, "boundary")   # 4K + 1
     obs = on.reset()
     assert obs.shape[-1] == d_on
     assert torch.isfinite(torch.as_tensor(obs)).all()
 
 
-def test_cpu_obs_dim_centerline_mode_is_the_default():
-    # preview_mode defaults to "centerline"; passing it explicitly must not change
-    # obs_dim, and it must match the plain preview_dim formula (backward compatible).
+def test_cpu_boundary_is_the_default_perception():
+    # parkour-1 defaults to track_perception="boundary"; asking for it explicitly must
+    # not change obs_dim.
     dists = (1.5, 3.0, 4.5, 6.0)
-    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
     default = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                       path_preview=True, preview_distances=dists)
+                       preview_distances=dists)
     explicit = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                        path_preview=True, preview_mode="centerline", preview_distances=dists)
-    d_off = off.observation_spec["observation"].shape[-1]
-    d_default = default.observation_spec["observation"].shape[-1]
-    d_explicit = explicit.observation_spec["observation"].shape[-1]
-    assert d_default == d_explicit == d_off + preview_dim(dists)
+                        track_perception="boundary", preview_distances=dists)
+    assert (default.observation_spec["observation"].shape[-1]
+            == explicit.observation_spec["observation"].shape[-1])
 
 
-def test_flag_off_is_unchanged():
-    off = make_env("parkour-1", robot="spot", level=0, backend="cpu")
-    # parkour-1's registry default already turns height_scan on (robot.obs_dim=49 +
-    # SCAN_N=12), so the byte-identical-to-before baseline for this env_id is 61, not
-    # the bare robot.obs_dim=49 (that figure is what a raw ParkourEnvCPU(robot="spot")
-    # gets, since its default ParkourConfig has height_scan=False).
-    assert off.observation_spec["observation"].shape[-1] == 61   # baseline preserved
+def test_perception_none_is_scan_only_baseline():
+    # With perception off, parkour-1 is robot.obs_dim (49) + height scan (12) = 61.
+    # parkour-1's registry default turns the height scan on, so the perception-off
+    # baseline for this env_id is 61, not the bare robot.obs_dim of 49.
+    off = make_env("parkour-1", robot="spot", level=0, backend="cpu", track_perception="none")
+    assert off.observation_spec["observation"].shape[-1] == 61

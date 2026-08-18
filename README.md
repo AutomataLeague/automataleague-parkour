@@ -4,20 +4,23 @@
 
 # Automata League Parkour
 
-The parkour competition environment of the **Automata League**: a robot learns to run
-**parkour courses** (tracks with obstacles it must overcome to reach the finish) in
-[MuJoCo](https://mujoco.org/). Boston Dynamics **Spot** and Unitree **Go1** ship as example
-robots; plug in your own the same way (see [Adding a custom robot](#adding-a-custom-robot),
-which walks through how Go1 was added). The examples train
-with [TorchRL](https://github.com/pytorch/rl) PPO, GPU parallel via
-[MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp); any other TorchRL agent can
-be used the same way (see [Training](#training)).
+The parkour competition environment of the **Automata League**: a legged robot learns to run
+a winding circuit in [MuJoCo](https://mujoco.org/), either **clearing obstacles** to reach the
+finish or **racing the flat course** for the fastest lap. Boston Dynamics **Spot** and Unitree
+**Go1** ship as example robots; plug in your own the same way (see
+[Adding a custom robot](#adding-a-custom-robot), which walks through how Go1 was added). The
+examples train with [TorchRL](https://github.com/pytorch/rl) PPO, GPU parallel via
+[MuJoCo Warp](https://github.com/google-deepmind/mujoco_warp); any other TorchRL agent works the
+same way (see [Training](#training)).
+
+Sibling of [automataleague-sumo](https://github.com/AutomataLeague/automataleague-sumo), whose
+architecture this mirrors.
 
 ## Setup
 
 ```bash
-uv sync                              # core: environment building and rendering
-uv sync --extra train --extra gpu    # adds torch, torchrl, MuJoCo Warp (GPU box)
+uv sync                              # core: environment building, rendering, task logic + tests
+uv sync --extra train --extra gpu    # adds torchrl, hydra, wandb, MuJoCo Warp (GPU box)
 ```
 
 Headless rendering needs a GL backend: `MUJOCO_GL=egl`.
@@ -29,7 +32,7 @@ versioned in a registry (`automataleague_parkour/envs/registry.py`) and imported
 
 | Environment | Track | Difficulty levels | Obstacles | Domain randomization |
 |---|---|---|---|---|
-| **`parkour-1`** | winding circuit (closed loop) | 5 &nbsp;(0 flat to 4 hardest) | 5 &nbsp;(paving, hurdle, staircase, ramp, side incline) | Yes &nbsp;(per episode obstacle scaling) |
+| **`parkour-1`** | winding circuit (closed loop) | 5 &nbsp;(0 flat to 4 hardest) | paving, hurdle, staircase, ramp, side incline | Yes &nbsp;(per-episode obstacle scaling) |
 
 ```python
 from automataleague_parkour import make_env, list_environments
@@ -37,35 +40,91 @@ from automataleague_parkour import make_env, list_environments
 list_environments()                                       # [EnvSpec(env_id="parkour-1", ...)]
 
 # single CPU env (for rendering or evaluation)
-env = make_env("parkour-1", robot="spot", level=4, backend="cpu")
+env = make_env("parkour-1", robot="spot", level=0, backend="cpu")
 
 # batched GPU env (for training)
-env = make_env("parkour-1", robot="spot", level=4, backend="warp", num_envs=2048)
+env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048)
 ```
 
-* `level` picks the difficulty (0 to 4); it sets the obstacle heights and the matching
-  action range.
+* `level` picks the difficulty (0 to 4); it sets the obstacle heights and the matching action range.
 * `backend="cpu"` is a single env; `backend="warp"` is the batched GPU env used for training.
 * Override any config field inline, e.g.
   `make_env("parkour-1", robot="spot", height_scan=True, race_mode=True)`.
 
+### Difficulty: flat (no obstacles) to obstacle courses
+
+`level_difficulty` is the single knob:
+
+* **Level 0 is flat: no obstacles at all**, just the winding track. It is the place to start, and
+  the setting for pure running and for racing.
+* **Levels 1 to 4 add obstacles** of increasing height (paving, hurdle, staircase, ramp, side
+  incline) and widen the action range to match, so the robot can lift its feet high enough to
+  clear them. Turn on the forward **height scan** (`env.course.height_scan=true`) at these levels
+  so the policy sees the obstacles ahead instead of feeling them only on contact.
+
+### Two ways to run it: complete or race
+
+* **Complete** (default): reach the finish. The reward shapes progress toward the goal plus a big
+  finish bonus. Trained with `examples/ppo_single.py` / `examples/ppo_curriculum.py`.
+* **Race** (`race_mode=true`): the fastest lap. The reward is a time trial (along-track speed,
+  minus a per-step time cost, plus a finish bonus). Trained with `examples/ppo_race.py`. See
+  [Racing](#racing).
+
 ## Training
 
-Two entry points in `examples/`, run from the repo root. Hydra config is
-`examples/config_ppo.yaml`; any value can be overridden on the command line.
+Entry points in `examples/`, run from the repo root. The Hydra config is `examples/config_ppo.yaml`;
+any value can be overridden on the command line. Checkpoints are written to `checkpoints/<run>/`.
+For the staged recipe, the gates to check at each stage, and the mistakes that cost us GPU time,
+see [training-recipe.md](training-recipe.md).
+
+### Without obstacles vs with obstacles
 
 ```bash
-# train one difficulty level (standard TorchRL PPO scheme)
-uv run python examples/ppo_single.py env.course.level_difficulty=2
+# flat: learn to run the circuit with no obstacles (level 0)
+uv run python examples/ppo_single.py env.course.level_difficulty=0
 
-# train across levels in sequence, warm starting each stage from the previous
+# with obstacles: pick a level 1..4, and turn the height scan on so it can see them
+uv run python examples/ppo_single.py env.course.level_difficulty=2 env.course.height_scan=true
+```
+
+Override anything via Hydra, e.g. `collector.total_frames=20_000_000 env.num_envs=4096`.
+
+### Curriculum (flat to obstacles, in sequence)
+
+```bash
 uv run python examples/ppo_curriculum.py
 ```
 
-* Override anything via Hydra, e.g. `collector.total_frames=20_000_000 env.num_envs=4096`.
-* Curriculum settings (which levels, frames per level, action scale per level, warm start)
-  live under the `curriculum:` block in the config.
-* Checkpoints are written to `checkpoints/`.
+Trains each level in turn, warm-starting each stage from the previous stage's best checkpoint
+(flat first, then progressively harder obstacles). Which levels, the per-level frame budget and
+action scale, and the warm-start toggle live under the `curriculum:` block in the config.
+
+## Racing
+
+A time trial on the same circuit: the goal is the fastest lap, not just reaching the finish.
+`examples/ppo_race.py` uses the racing preset (`examples/config_race.yaml`): `race_mode`
+navigation (the agent is scored on along-track speed and gate crossings, so it finds the
+time-optimal line instead of dipping to each gate centre), a lap-time reward, and **track
+perception** so it can see the course ahead.
+
+```bash
+# race the flat circuit for the fastest lap (level 0, no obstacles)
+uv run python examples/ppo_race.py
+
+# race an obstacle course instead
+uv run python examples/ppo_race.py env.course.level_difficulty=2 env.course.height_scan=true
+```
+
+**Track perception** (`env.course.track_perception`) is what lets a racer plan a line. It appends
+lookahead points along the track ahead to the observation:
+
+* `boundary` (default): the left and right corridor edges at each lookahead, so the policy sees the
+  drivable channel and can cut the apex.
+* `centerline`: the midline, so the policy tracks the centre of the track.
+* `none`: blind to the track ahead.
+
+The lap-time reward and the rest of the preset are in `examples/config_race.yaml`; override any of
+it on the command line.
 
 ## Simulation speed
 
@@ -198,6 +257,21 @@ env = make_env("parkour-1", robot="go1", reward_fn=my_reward)
    e.g. `energy_pen = -rc.energy * (state.joint_vel ** 2).sum(-1)`.
 
 Then expose it under `reward_weights` in `examples/config_ppo.yaml` to control it from training.
+
+## Tests
+
+```bash
+uv run pytest -m "not gpu"            # CPU suite: env, observations, rewards, navigation, preview
+uv run pytest -m gpu                  # the batched MuJoCo Warp backend (needs CUDA + mujoco-warp)
+```
+
+The task logic (observations, rewards, termination, the CPU env) is written in tensors, so the
+task-logic tests run on a bare `uv sync` with no training stack. The training-integration tests
+additionally need `--extra train` (torchrl), and the `gpu`-marked tests need `--extra gpu`.
+
+## Licence
+
+Apache-2.0, see [LICENSE](LICENSE). Vendored robot models keep their upstream licences.
 
 ## Credits
 
