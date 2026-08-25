@@ -8,12 +8,13 @@ import hydra
 import numpy as np
 import torch
 
-from automataleague_parkour.training import curriculum_from_cfg, run_ppo
+from automataleague_parkour.training import curriculum_from_cfg, render_stage_video, run_ppo
 
 
 @hydra.main(version_base="1.1", config_path="", config_name="config_ppo")
 def main(cfg):  # noqa: F821
-    os.chdir(hydra.utils.get_original_cwd())   # Hydra chdirs into outputs/; restore so checkpoints/ land at the launch dir
+    # Hydra chdirs into outputs/; restore the launch dir so checkpoints/ lands there.
+    os.chdir(hydra.utils.get_original_cwd())
     torch.manual_seed(cfg.env.seed)
     np.random.seed(cfg.env.seed)
     cur = curriculum_from_cfg(cfg)
@@ -30,6 +31,7 @@ def main(cfg):  # noqa: F821
             run_name=f"parkour1_curriculum_L{level}",
         )
         print(f"level {level} best -> {best}")
+        render_stage_video(cfg, best, f"parkour1_curriculum_L{level}")
         prev_best = best
     print(f"curriculum complete; final policy: {prev_best}")
 

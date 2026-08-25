@@ -14,7 +14,7 @@ import hydra
 import numpy as np
 import torch
 
-from automataleague_parkour.training import run_ppo
+from automataleague_parkour.training import render_stage_video, run_ppo
 
 
 @hydra.main(version_base="1.1", config_path="", config_name="config_race")
@@ -31,6 +31,7 @@ def main(cfg):  # noqa: F821
         run_name=f"race_L{cfg.env.course.level_difficulty}",
     )
     print(f"best checkpoint: {best}")
+    render_stage_video(cfg, best, f"race_L{cfg.env.course.level_difficulty}")
 
 
 if __name__ == "__main__":
