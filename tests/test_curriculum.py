@@ -1,5 +1,13 @@
-from omegaconf import OmegaConf
-from automataleague_parkour.training.curriculum import CurriculumConfig, curriculum_from_cfg
+import pytest
+
+pytest.importorskip("omegaconf", reason="hydra/omegaconf ship in the `train` extra")
+
+from omegaconf import OmegaConf  # noqa: E402
+
+from automataleague_parkour.training.curriculum import (  # noqa: E402
+    CurriculumConfig,
+    curriculum_from_cfg,
+)
 
 
 def test_curriculum_from_cfg():

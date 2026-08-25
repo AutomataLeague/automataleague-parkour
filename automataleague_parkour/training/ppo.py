@@ -1,10 +1,14 @@
 """Reusable PPO training loop (on-policy, GPU-parallel Warp envs)."""
 from __future__ import annotations
 
-import os, time
+import os
+import time
 from collections import defaultdict
 
-import numpy as np, torch, tqdm, wandb
+import numpy as np
+import torch
+import tqdm
+import wandb
 from tensordict import TensorDict
 from torchrl._utils import logger as torchrl_logger
 from torchrl.data import LazyTensorStorage, TensorDictReplayBuffer
@@ -14,8 +18,14 @@ from torchrl.objectives import ClipPPOLoss, group_optimizers
 from torchrl.objectives.value.advantages import GAE
 from torchrl.record.loggers import generate_exp_name, get_logger
 
-from automataleague_parkour.training.env import make_environment, rollout_video, log_metrics
-from automataleague_parkour.training.models import make_ppo_models, _pad_obs_input
+from automataleague_parkour.envs.parkour.observation import obs_layout
+from automataleague_parkour.robots import get_robot
+from automataleague_parkour.training.env import log_metrics, make_environment, rollout_video
+from automataleague_parkour.training.models import (
+    _pad_obs_input,
+    check_obs_layout_compatible,
+    make_ppo_models,
+)
 
 OUTCOME_NAMES = {0: "ongoing", 1: "success", 2: "fell", 3: "off_path"}
 
@@ -25,6 +35,32 @@ def aggregate_outcomes(codes):
     for code in codes:
         stats[OUTCOME_NAMES.get(int(code), "unknown")] += 1
     return dict(stats)
+
+
+def checkpoint_obs_layout(state, robot):
+    """The observation layout a saved checkpoint was trained with.
+
+    New checkpoints record it directly. Older ones only carry their hydra `config`,
+    which is enough to reconstruct it, so warm-starting from a pre-existing run keeps
+    working and still gets checked.
+    """
+    stored = state.get("obs_layout")
+    if stored:
+        return tuple((str(name), int(width)) for name, width in stored)
+    course = state["config"]["env"]["course"]
+    return obs_layout(course, robot)
+
+
+def save_checkpoint(path, *, actor, critic, collected_frames, cfg, layout):
+    """Write a checkpoint. `obs_layout` travels with the weights so a later
+    warm-start can check the sensors line up instead of only the widths."""
+    torch.save({
+        "actor_state_dict": actor.state_dict(),
+        "critic_state_dict": critic.state_dict(),
+        "collected_frames": collected_frames,
+        "config": dict(cfg),
+        "obs_layout": [list(block) for block in layout],
+    }, path)
 
 
 def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
@@ -64,12 +100,21 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
 
     train_env, eval_env = make_environment(cfg)
     actor, critic = make_ppo_models(cfg, train_env, device)
+    robot = get_robot(cfg.env.robot)
+    cur_layout = obs_layout(cfg.env.course, robot)
+    from automataleague_parkour.training.env import configs_from_cfg
+    _, _, tc_eval = configs_from_cfg(cfg)          # per-level episode budget
 
     # Warm-start: initialise from a previously-trained policy (e.g. flat -> obstacles).
     init_ckpt = getattr(cfg.network, "init_checkpoint", None)
     if init_ckpt:
         state = torch.load(init_ckpt, map_location=device, weights_only=False)
         cur_obs = train_env.observation_spec["observation"].shape[-1]
+        # Padding appends columns, so it is only valid when the checkpoint's layout is
+        # a prefix of ours. Raises rather than silently feeding one sensor's values
+        # into another sensor's trained weights.
+        check_obs_layout_compatible(
+            checkpoint_obs_layout(state, robot), cur_layout)
         a_sd = _pad_obs_input(state["actor_state_dict"], cur_obs, cfg.network.hidden_sizes)
         c_sd = _pad_obs_input(state["critic_state_dict"], cur_obs, cfg.network.hidden_sizes)
         actor.load_state_dict(a_sd)
@@ -107,7 +152,7 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
     max_grad_norm = cfg.loss.max_grad_norm
     eval_iter = cfg.logger.eval_iter
     frames_per_batch = cfg.collector.frames_per_batch
-    eval_rollout_steps = cfg.env.max_episode_steps
+    eval_rollout_steps = tc_eval.max_episode_steps    # resolved per-level
     anneal_lr = cfg.loss.anneal_lr
     anneal_clip_epsilon = cfg.loss.anneal_clip_epsilon
     cfg_lr = cfg.optim.lr
@@ -248,12 +293,10 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
                          - 0.01 * metrics_to_log.get("eval/final_dist_to_finish", 0.0))
                 if score > best_score:
                     best_score = score
-                    torch.save({
-                        "actor_state_dict": actor.state_dict(),
-                        "critic_state_dict": critic.state_dict(),
-                        "collected_frames": collected_frames,
-                        "config": dict(cfg),
-                    }, os.path.join(checkpoint_dir, "ppo_best.pt"))
+                    save_checkpoint(
+                        os.path.join(checkpoint_dir, "ppo_best.pt"),
+                        actor=actor, critic=critic, collected_frames=collected_frames,
+                        cfg=cfg, layout=cur_layout)
                     torchrl_logger.info(
                         f"New best policy (max_checkpoint="
                         f"{metrics_to_log.get('eval/max_checkpoint')}) -> ppo_best.pt")
@@ -278,24 +321,16 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
                     actor.train()
 
             ckpt_path = os.path.join(checkpoint_dir, f"ppo_eval_{collected_frames}.pt")
-            torch.save({
-                "actor_state_dict": actor.state_dict(),
-                "critic_state_dict": critic.state_dict(),
-                "collected_frames": collected_frames,
-                "config": dict(cfg),
-            }, ckpt_path)
+            save_checkpoint(ckpt_path, actor=actor, critic=critic,
+                            collected_frames=collected_frames, cfg=cfg, layout=cur_layout)
             torchrl_logger.info(f"Saved checkpoint: {ckpt_path}")
 
         if logger is not None:
             log_metrics(logger, metrics_to_log, collected_frames)
 
     final_ckpt_path = os.path.join(checkpoint_dir, "ppo_final.pt")
-    torch.save({
-        "actor_state_dict": actor.state_dict(),
-        "critic_state_dict": critic.state_dict(),
-        "collected_frames": collected_frames,
-        "config": dict(cfg),
-    }, final_ckpt_path)
+    save_checkpoint(final_ckpt_path, actor=actor, critic=critic,
+                    collected_frames=collected_frames, cfg=cfg, layout=cur_layout)
     torchrl_logger.info(f"Saved final checkpoint: {final_ckpt_path}")
     torchrl_logger.info(f"Training took {time.time() - start_time:.2f}s")
 

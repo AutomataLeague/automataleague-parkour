@@ -3,12 +3,20 @@ must load into the preview-augmented network, with the new input columns
 zero-padded so the warm-started policy initially ignores the preview signal
 and keeps its learned gait.
 """
-import torch
-from omegaconf import OmegaConf
-from torchrl.data import Bounded, Composite, Unbounded
+import pytest
 
-from automataleague_parkour.robots import get_robot
-from automataleague_parkour.training.models import _pad_obs_input, build_actor, make_ppo_models
+pytest.importorskip("torchrl", reason="torchrl ships in the `train` extra")
+
+import torch  # noqa: E402
+from omegaconf import OmegaConf  # noqa: E402
+from torchrl.data import Bounded, Composite, Unbounded  # noqa: E402
+
+from automataleague_parkour.robots import get_robot  # noqa: E402
+from automataleague_parkour.training.models import (  # noqa: E402
+    _pad_obs_input,
+    build_actor,
+    make_ppo_models,
+)
 
 HIDDEN_SIZES = [512, 256, 128]
 SMALL_OBS = 49  # spot, height scan off, no path preview

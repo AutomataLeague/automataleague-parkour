@@ -4,11 +4,12 @@ behind the optional height scan, selected by ParkourConfig.track_perception. Mir
 height_scan.
 
 Three settings of ParkourConfig.track_perception:
-  "boundary" (default): a LEFT and a RIGHT corridor-edge point per lookahead, so the
-  policy perceives the drivable channel width and can find a tighter line instead of
-  hugging the centerline.
+  "none" (the default): disabled, blind to the track ahead. What the completion task
+  uses; the finish is reached by following gates, not by planning a line.
+  "boundary": a LEFT and a RIGHT corridor-edge point per lookahead, so the policy
+  perceives the drivable channel width and can find a tighter line instead of hugging
+  the centerline. What racing uses (examples/config_race.yaml).
   "centerline": K centerline points, so the policy learns to track the centerline.
-  "none": disabled (blind to the track ahead).
 """
 from __future__ import annotations
 
@@ -27,26 +28,53 @@ def preview_dim(distances, mode: str = "centerline") -> int:
     return (4 * n + 1) if mode == "boundary" else (2 * n + 1)
 
 
+# Accepted values for ParkourConfig.track_perception, mapped to the internal mode.
+# "boundaries" is the legacy spelling and stays accepted so old configs and
+# checkpoints keep loading. Anything else raises: a typo used to fall back to
+# "centerline", which silently trained a different sensor than the one asked for.
+_PERCEPTION_MODES = {
+    "none": (False, "centerline"),
+    "off": (False, "centerline"),
+    "": (False, "centerline"),
+    "centerline": (True, "centerline"),
+    "boundary": (True, "boundary"),
+    "boundaries": (True, "boundary"),
+}
+
+
+def course_get(course, key, default=None):
+    """Read `key` off a course config that may be a dict, a DictConfig or a
+    ParkourConfig dataclass."""
+    if hasattr(course, "get"):
+        try:
+            return course.get(key, default)
+        except Exception:
+            return default
+    return getattr(course, key, default)
+
+
 def resolve_perception(course) -> tuple[bool, str]:
     """(on, mode) for a course cfg. Reads the single `track_perception` knob
     (none|centerline|boundary) and falls back to the legacy `path_preview` +
-    `preview_mode` pair, so checkpoints trained before the rename still load. `mode`
-    is normalised to "centerline"/"boundary" (legacy "boundaries" maps to "boundary").
-    When a cfg specifies nothing, perception is treated as off."""
-    def get(key, default=None):
-        if hasattr(course, "get"):
-            try:
-                return course.get(key, default)
-            except Exception:
-                return default
-        return getattr(course, key, default)
+    `preview_mode` pair, so checkpoints trained before the rename still load.
+    `mode` is normalised to "centerline"/"boundary". When a cfg specifies nothing,
+    perception is off.
 
-    tp = get("track_perception", None)
+    Raises ValueError on an unrecognised `track_perception`, rather than quietly
+    choosing a sensor the caller did not ask for.
+    """
+    tp = course_get(course, "track_perception", None)
     if tp is not None:
-        tp = str(tp).lower()
-        return (tp not in ("none", "off", "")), ("boundary" if tp == "boundary" else "centerline")
-    on = bool(get("path_preview", False))
-    mode = str(get("preview_mode", "centerline")).lower()
+        key = str(tp).strip().lower()
+        if key not in _PERCEPTION_MODES:
+            raise ValueError(
+                f"track_perception={tp!r} is not a valid setting. "
+                f"Expected one of {sorted(set(_PERCEPTION_MODES) - {''})}."
+            )
+        return _PERCEPTION_MODES[key]
+
+    on = bool(course_get(course, "path_preview", False))
+    mode = str(course_get(course, "preview_mode", "centerline")).lower()
     return on, ("boundary" if mode in ("boundary", "boundaries") else "centerline")
 
 

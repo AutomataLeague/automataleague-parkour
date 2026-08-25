@@ -8,12 +8,45 @@ from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import ExplorationType
 from torchrl.modules import MLP, ProbabilisticActor, TanhNormal, ValueOperator
 
-from automataleague_parkour.envs.parkour import height_scan as hs
-
 
 def get_activation(cfg):
     return {"relu": torch.nn.ReLU, "tanh": torch.nn.Tanh,
             "leaky_relu": torch.nn.LeakyReLU, "elu": torch.nn.ELU}[cfg.network.activation]
+
+
+def check_obs_layout_compatible(src_layout, dst_layout):
+    """Raise unless a policy with `src_layout` can be zero-padded into `dst_layout`.
+
+    Zero-padding appends columns at the end, so it is only correct when the source
+    layout is a **prefix** of the destination: every block the source had is still
+    there, at the same width, in the same position. Widening alone is not enough.
+
+    The case this exists for: a level-0 completion policy is
+    `[proprio 49 | height_scan 12]` = 61 and the racing preset is
+    `[proprio 49 | track_preview 17]` = 66. That is wider, so width-only padding
+    accepted it and fed 12 columns of boundary-preview values into weights trained
+    on terrain heights, with nothing raised and nothing logged.
+    """
+    def fmt(layout):
+        return "[" + " | ".join(f"{n} {w}" for n, w in layout) + f"] = {sum(w for _, w in layout)}"
+
+    for i, (name, width) in enumerate(src_layout):
+        if i >= len(dst_layout):
+            raise ValueError(
+                f"Cannot warm-start: the checkpoint has a block the target does not.\n"
+                f"  checkpoint: {fmt(src_layout)}\n  target:     {fmt(dst_layout)}\n"
+                f"Dropping the trailing '{name}' block would shift every column after it."
+            )
+        dst_name, dst_width = dst_layout[i]
+        if (name, width) != (dst_name, dst_width):
+            raise ValueError(
+                f"Cannot warm-start: observation block {i} differs.\n"
+                f"  checkpoint: {fmt(src_layout)}\n  target:     {fmt(dst_layout)}\n"
+                f"Block {i} is '{name}' ({width} wide) in the checkpoint but "
+                f"'{dst_name}' ({dst_width} wide) in the target, so the trained weights "
+                f"for '{name}' would receive '{dst_name}' values. Train from scratch, or "
+                f"match the sensors (height_scan / track_perception) to the checkpoint."
+            )
 
 
 def _pad_obs_input(sd, cur_obs, hidden_sizes=()):
@@ -23,6 +56,9 @@ def _pad_obs_input(sd, cur_obs, hidden_sizes=()):
     (in_features < cur_obs and not a hidden width) is padded; its new trailing
     columns start at zero, so the warm-started policy initially ignores the sensor
     and keeps its learned gait. A same-dim checkpoint is loaded unchanged.
+
+    Correct only when the source layout is a prefix of the target: call
+    `check_obs_layout_compatible` first (`ppo.run_ppo` does).
     """
     skip = {int(h) for h in hidden_sizes}
     out = {}
@@ -94,16 +130,10 @@ def make_ppo_models(cfg, train_env, device):
 
 def build_actor(cfg, robot, device):
     """Rebuild the actor from config/dims without a live GPU env (stub specs)."""
-    from automataleague_parkour.envs.parkour.path_preview import preview_dim, resolve_perception
-    course = getattr(cfg.env, "course", object())
-    scan_on = bool(getattr(course, "height_scan", False))
-    preview_on, preview_mode = resolve_perception(course)
-    # obs grows by SCAN_N with the height scan and by preview_dim with the track preview,
-    # matching the env's own obs_dim so a trained checkpoint loads into the rebuilt actor.
-    obs_dim = robot.obs_dim + (hs.SCAN_N if scan_on else 0)
-    if preview_on:
-        obs_dim += preview_dim(
-            getattr(course, "preview_distances", (1.5, 3.0, 4.5, 6.0)), preview_mode)
+    from automataleague_parkour.envs.parkour.observation import obs_width
+    # One source of truth for the width: the same obs_layout the envs are sized from,
+    # so a rebuilt actor cannot drift from what build_observation concatenates.
+    obs_dim = obs_width(getattr(cfg.env, "course", object()), robot)
 
     class _Stub:
         pass
