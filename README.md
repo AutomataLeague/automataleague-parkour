@@ -27,6 +27,16 @@ Headless rendering needs a GL backend: `MUJOCO_GL=egl`.
 
 ## The parkour environment
 
+<p align="center">
+  <img src="assets/parkour_env.png" alt="Three frames of a parkour run: the opening straight, a bend taken on the racing line, and the paving obstacle field" width="820">
+</p>
+
+<p align="center">
+  <sub>Left and centre: a trained racer on the flat circuit (level 0), starting the lap and
+  carrying speed through a bend. Right: the paving field at level 2. Yellow lines are the
+  checkpoint gates, white is the corridor boundary — stray past it and the episode ends.</sub>
+</p>
+
 The parkour task lives in `automataleague_parkour/envs/parkour/`. Environments are named and
 versioned in a registry (`automataleague_parkour/envs/registry.py`) and imported by id.
 
@@ -49,7 +59,7 @@ env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048
 * `level` picks the difficulty (0 to 4); it sets the obstacle heights and the matching action range.
 * `backend="cpu"` is a single env; `backend="warp"` is the batched GPU env used for training.
 * Override any config field inline, e.g.
-  `make_env("parkour-1", robot="spot", height_scan=True, race_mode=True)`.
+  `make_env("parkour-1", robot="spot", race_mode=True, track_perception="none")`.
 
 ### Difficulty: flat (no obstacles) to obstacle courses
 
@@ -59,8 +69,8 @@ env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048
   the setting for pure running and for racing.
 * **Levels 1 to 4 add obstacles** of increasing height (paving, hurdle, staircase, ramp, side
   incline) and widen the action range to match, so the robot can lift its feet high enough to
-  clear them. Turn on the forward **height scan** (`env.course.height_scan=true`) at these levels
-  so the policy sees the obstacles ahead instead of feeling them only on contact.
+  clear them. The completion trainer runs with the forward **height scan** on by default
+  (`config_ppo.yaml`), so the policy sees the obstacles ahead instead of feeling them on contact.
 
 ### Two ways to run it: complete or race
 
@@ -70,12 +80,41 @@ env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048
   minus a per-step time cost, plus a finish bonus). Trained with `examples/ppo_race.py`. See
   [Racing](#racing).
 
+### The reward
+
+The completion reward (`RewardConfig` in `envs/parkour/config.py`, combined in
+`rewards.py`). Unlike our sibling sumo project these weights are **not** on a common
+whole-episode scale, so read the middle column before comparing them:
+
+| term | what it pays for | kind | weight |
+|---|---|---|---|
+| `forward` | along-track speed toward the goal, **saturating at `target_speed`** | per step | 1.5 |
+| `target_speed` | the speed `forward` stops paying above (m/s) | — | 1.0 |
+| `progress` | distance closed toward the next gate (potential shaping) | per step | 2.0 |
+| `checkpoint` | reaching a gate | one-off | 10.0 |
+| `success` | reaching the finish | terminal | 100.0 |
+| `alive` | per-step survival bonus; **negative makes it a time cost** | per step | 0.0 |
+| `upright` / `height` | exp-shaped posture keeping, deliberately small so standing still never wins | per step | 0.05 each |
+| `action` / `joint_vel` | regularizers (magnitude, smoothness) | per step | 0.01 / 0.001 |
+| `fall` | falling | one-off penalty | 10.0 |
+| `off_path` | straying past `half_width` of the centerline; also terminates | one-off penalty | 25.0 |
+| `feet_air_time` | swing duration per foot, for a clean stepping gait instead of a shuffle | per step | 0.0 (off) |
+
+`forward` is the dense driver that makes walking emerge, and the **saturation matters**:
+above `target_speed` it is flat, so nothing in this reward pushes a policy faster. That
+is what the racing preset changes — it zeroes `progress` and `checkpoint`, sets `alive`
+negative to make every step cost time, and raises `success` to 300 so a finished lap
+still clears the accumulated cost. Racing speed then comes from the clock, not from a
+shaping term.
+
 ## Training
 
 Entry points in `examples/`, run from the repo root. The Hydra config is `examples/config_ppo.yaml`;
 any value can be overridden on the command line. Checkpoints are written to `checkpoints/<run>/`.
-For the staged recipe, the gates to check at each stage, and the mistakes that cost us GPU time,
-see [training-recipe.md](training-recipe.md).
+For the staged recipe, the gates to check at each stage, the results it delivers, and the
+mistakes that cost us GPU time, see [training-recipe.md](training-recipe.md). On the shipped
+defaults at 30M frames per level the chain scores 6/6 flat, 5/6 paving, 3/6 hurdle, 6/6
+staircase, 4/6 ramp, and 6/6 racing over 6 noisy starts.
 
 ### Without obstacles vs with obstacles
 
@@ -83,11 +122,16 @@ see [training-recipe.md](training-recipe.md).
 # flat: learn to run the circuit with no obstacles (level 0)
 uv run python examples/ppo_single.py env.course.level_difficulty=0
 
-# with obstacles: pick a level 1..4, and turn the height scan on so it can see them
-uv run python examples/ppo_single.py env.course.level_difficulty=2 env.course.height_scan=true
+# with obstacles: pick a level 1..4
+uv run python examples/ppo_single.py env.course.level_difficulty=2
 ```
 
 Override anything via Hydra, e.g. `collector.total_frames=20_000_000 env.num_envs=4096`.
+
+Every run sees the same thing: `[proprio 49 | height_scan 12 | track_preview 17] = 78`.
+Both sensors are on at every level, so the policy always has the terrain ahead and the
+corridor ahead, and any checkpoint warm-starts any run — see
+[Observation layout](training-recipe.md#observation-layout-and-warm-starting).
 
 ### Curriculum (flat to obstacles, in sequence)
 
@@ -98,6 +142,12 @@ uv run python examples/ppo_curriculum.py
 Trains each level in turn, warm-starting each stage from the previous stage's best checkpoint
 (flat first, then progressively harder obstacles). Which levels, the per-level frame budget and
 action scale, and the warm-start toggle live under the `curriculum:` block in the config.
+
+**Every stage renders an eval video when it finishes**, to `videos/<run_name>.mp4`, so a
+curriculum leaves one clip per level (`parkour1_curriculum_L1.mp4` … `_L4.mp4`) and you can
+see a level that trained badly without waiting for the whole chain. Controlled by
+`logger.stage_video` / `logger.stage_video_camera`; set `logger.stage_video=false` to skip.
+Rendering runs after the checkpoint is written and can never fail a completed run.
 
 ## Racing
 
@@ -112,32 +162,71 @@ perception** so it can see the course ahead.
 uv run python examples/ppo_race.py
 
 # race an obstacle course instead
-uv run python examples/ppo_race.py env.course.level_difficulty=2 env.course.height_scan=true
+uv run python examples/ppo_race.py env.course.level_difficulty=2
 ```
 
-**Track perception** (`env.course.track_perception`) is what lets a racer plan a line. It appends
-lookahead points along the track ahead to the observation:
+**Track perception** (`env.course.track_perception`) is what lets a policy plan a line. It
+appends lookahead points along the track ahead to the observation:
 
-* `boundary` (default): the left and right corridor edges at each lookahead, so the policy sees the
-  drivable channel and can cut the apex.
+* `boundary` (**the default**): the left and right corridor edges at each lookahead, so the
+  policy sees the drivable channel and can cut the apex.
 * `centerline`: the midline, so the policy tracks the centre of the track.
-* `none`: blind to the track ahead.
+* `none`: blind to the track ahead. For ablations.
 
-The lap-time reward and the rest of the preset are in `examples/config_race.yaml`; override any of
-it on the command line.
+The lap-time reward, `entropy_coeff` and the rest of the preset are in `examples/config_race.yaml`;
+override any of it on the command line.
+
+## Watch and evaluate a policy
+
+Small tools in `tools/` consume a trained checkpoint. Watch a policy run the course:
+
+```bash
+MUJOCO_GL=egl uv run python tools/render_policy.py checkpoints/race_L0/ppo_best.pt -o lap.mp4
+MUJOCO_GL=egl uv run python tools/render_policy.py CKPT --camera drone_side   # chase|drone_side|top|...
+```
+
+Score it over several noisy starts (the honest ranking signal, since the training curve's greedy
+eval is not the same as robust performance):
+
+```bash
+uv run python tools/eval_policy.py checkpoints/race_L0/ppo_best.pt --seeds 8
+#   finished 8/8 starts
+#   lap time  median 18.7s  best 18.6s  [...]
+```
+
+A lap counts as finished on the env's terminal outcome, and lap time is the control steps to the
+finish over 50 Hz. Both run on the single-env CPU backend, so no GPU is needed to watch or rank.
 
 ## Simulation speed
 
-Throughput of the batched MuJoCo Warp env for `parkour-1` (level 2, height scan on),
-measured as total environment steps per second across all parallel envs. Throughput climbs
-with `num_envs` as parallelism amortizes the fixed cost of each step.
+Throughput of the batched MuJoCo Warp env, as total environment steps per second across
+all parallel envs. It climbs with `num_envs` because parallelism amortizes the fixed cost
+of each step, so a figure only means something with its batch size and its sensor config
+beside it — the shipped observation is 78 columns, or 49 with both sensors turned off.
 
-Measured across GPU variants, the batched env reaches roughly **13k environment steps per
-second**. For reference, the single environment CPU backend (used for rendering and
-evaluation) runs at about 1.2k env steps per second.
+```bash
+MUJOCO_GL=egl uv run python tools/benchmark_env.py                  # sweeps num_envs
+uv run python tools/benchmark_env.py --backend cpu                  # single-env baseline
+```
 
-Measured by stepping the env after a warmup and computing `num_envs × steps / seconds`;
-the same figure is logged as `train/fps` during a training run.
+Observed on `parkour-1` at level 2 with the height scan on (61-dim observation), across
+the machines this was developed on:
+
+| num_envs | observed env steps/s |
+|---:|---|
+| 512 | 10k – 60k |
+| 1024 | 10k – 85k |
+| 2048 | 12k – 105k |
+| 4096 | 13k – 110k |
+
+The spread is the hardware, not the code: run `benchmark_env.py` to get the number for
+yours. The single-env CPU backend used for rendering and evaluation runs at roughly
+**1.2k steps/s**.
+
+End-to-end PPO training is slower than the raw env figure because it includes the policy
+forward pass and the update — on the same box that stepped the env at ~105k, training
+sustained ~54k frames/s. That end-to-end number is what `run_ppo` logs as `train/fps`;
+`benchmark_env.py` reports the env alone, so compare like with like.
 
 ## Adding a custom robot
 
