@@ -3,8 +3,8 @@ import math
 import torch
 
 from automataleague_parkour.envs.parkour.config import TerminationConfig
-from automataleague_parkour.envs.parkour.termination import compute_termination
 from automataleague_parkour.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour.termination import compute_termination
 
 
 def _state(z=0.46, y=0.0, roll=0.0, N=1):

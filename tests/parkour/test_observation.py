@@ -1,8 +1,8 @@
 import torch
 
 from automataleague_parkour.envs.parkour import build_parkour_model
-from automataleague_parkour.envs.parkour.observation import build_observation
 from automataleague_parkour.envs.parkour.navigation import checkpoint_geometry
+from automataleague_parkour.envs.parkour.observation import build_observation
 from automataleague_parkour.envs.parkour.state import extract_state
 
 

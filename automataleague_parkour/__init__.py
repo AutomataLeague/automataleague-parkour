@@ -1,8 +1,8 @@
 """automataleague — a league of robots competing at athletic tasks in MuJoCo."""
 
 from automataleague_parkour.envs.registry import (
-    EnvSpec,
     ENVIRONMENTS,
+    EnvSpec,
     get_env_spec,
     list_environments,
     make_env,

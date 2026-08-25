@@ -186,12 +186,17 @@ def _resolve_dr(model: mujoco.MjModel, dr_raw: list) -> dict | None:
         for b in obst["bodies"]:
             if b["mode"] == "height":
                 H["mocap_idx"].append(mocapid(b["body"]))
-                H["h_nom"].append(b["h_nom"]); H["group"].append(gi)
+                H["h_nom"].append(b["h_nom"])
+                H["group"].append(gi)
             else:
-                A["mocap_idx"].append(mocapid(b["body"])); A["group"].append(gi)
-                A["base_angle"].append(b["base_angle"]); A["axis"].append(b["axis"])
-                A["yaw"].append(b["yaw"]); A["half"].append(b["half"])
-                A["cz_mode"].append(b["cz_mode"]); A["top_z"].append(b["top_z"])
+                A["mocap_idx"].append(mocapid(b["body"]))
+                A["group"].append(gi)
+                A["base_angle"].append(b["base_angle"])
+                A["axis"].append(b["axis"])
+                A["yaw"].append(b["yaw"])
+                A["half"].append(b["half"])
+                A["cz_mode"].append(b["cz_mode"])
+                A["top_z"].append(b["top_z"])
 
     out = {"n_groups": len(dr_raw), "H": float(_DR_H_FROM(dr_raw)),
            "names": [obst["name"] for obst in dr_raw]}

@@ -9,7 +9,8 @@ def _state(n=2, nj=12):
     q = torch.zeros(n, 4)
     q[:, 0] = 1
     return ParkourState(base_pos=z3, base_quat=q, base_linvel_world=z3,
-                         base_angvel_local=z3, joint_pos=torch.zeros(n, nj), joint_vel=torch.zeros(n, nj))
+                         base_angvel_local=z3, joint_pos=torch.zeros(n, nj),
+                         joint_vel=torch.zeros(n, nj))
 
 
 def test_preview_appended_last_and_leading_cols_stable():

@@ -70,7 +70,8 @@ def test_open_track_clamps_past_the_end():
 
 
 def test_lap_wrap_samples_past_start():
-    pl = torch.tensor([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]])  # closed square
+    # closed square
+    pl = torch.tensor([[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]])
     cum = cumulative_length(pl)
     base_xy = torch.tensor([[0.0, 0.5]])  # just before the finish/start
     out = track_preview(

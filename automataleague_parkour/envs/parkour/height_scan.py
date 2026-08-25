@@ -35,7 +35,7 @@ _GROUP0 = np.array([1, 0, 0, 0, 0, 0], dtype=np.uint8)
 
 def scan_offsets() -> np.ndarray:
     """(SCAN_N, 2) query offsets in the base heading frame (forward=x, left=y)."""
-    return np.array([[f, l] for f in SCAN_FWD for l in SCAN_LAT], dtype=np.float64)
+    return np.array([[fwd, lat] for fwd in SCAN_FWD for lat in SCAN_LAT], dtype=np.float64)
 
 
 def world_query_points(base_xy, yaw: float, offsets: np.ndarray) -> np.ndarray:

@@ -1,8 +1,10 @@
 """A custom reward_fn passed to make_env replaces the default reward."""
 import os
+
 os.environ.setdefault("MUJOCO_GL", "egl")
 import numpy as np
 import torch
+
 from automataleague_parkour import make_env
 
 
