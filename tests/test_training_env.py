@@ -1,7 +1,10 @@
 import pytest
-from omegaconf import OmegaConf
 
-from automataleague.training.env import configs_from_cfg
+pytest.importorskip("omegaconf", reason="hydra/omegaconf ship in the `train` extra")
+
+from omegaconf import OmegaConf  # noqa: E402
+
+from automataleague_parkour.training.env import configs_from_cfg  # noqa: E402
 
 
 def _cfg(**course):
@@ -15,7 +18,7 @@ def test_registry_backed_defaults():
     course, rc, tc = configs_from_cfg(_cfg())
     assert course.track == "circuit"            # from registry (env.name=parkour-1)
     assert course.level_difficulty == 2
-    assert course.action_scale == pytest.approx(0.50)   # null in cfg -> registry schedule
+    assert course.action_scale == pytest.approx(0.70)   # null in cfg -> registry schedule
     assert tc.max_episode_steps == 1000
 
 

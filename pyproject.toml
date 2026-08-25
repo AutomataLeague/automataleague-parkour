@@ -1,22 +1,25 @@
 [project]
-name = "automataleague"
+name = "automataleague-parkour"
 version = "0.1.0"
-description = "A league of robots competing at athletic tasks (parkour, boxing, sumo, ...) in MuJoCo, trained with TorchRL."
+description = "A robot runs parkour courses — obstacle tracks and flat time-trials — in MuJoCo, trained with TorchRL."
 readme = "README.md"
 requires-python = ">=3.10"
+license = { file = "LICENSE" }
 
-# Core (Phase A: scene building + rendering). Kept light so local setup is fast.
+# Core. Torch is core (not an extra) because the task logic — observations, rewards,
+# termination, the CPU env — is written in tensors, and the CPU test suite exercises
+# it without any training dependency. Kept otherwise light so local setup is fast.
 dependencies = [
     "mujoco>=3.4.0",
     "numpy>=1.24",
+    "torch>=2.4",
     "imageio>=2.34",
     "imageio-ffmpeg>=0.5",
 ]
 
 [project.optional-dependencies]
-# Training stack (Phase B) — install on the GPU box: `uv sync --extra train`
+# Training stack — install on the GPU box: `uv sync --extra train`
 train = [
-    "torch>=2.4",
     "torchrl>=0.6",
     "tensordict>=0.6",
     "hydra-core>=1.3",
@@ -24,21 +27,23 @@ train = [
     "tqdm>=4.66",
     "moviepy>=1.0",   # required by wandb.Video for eval video logging
 ]
-# GPU-parallel physics (Phase B) — MuJoCo Warp. Source pinned per-machine on the GPU box.
+# GPU-parallel physics — MuJoCo Warp. Resolves from PyPI; needs a CUDA device at runtime.
 gpu = [
     "mujoco-warp",
 ]
-dev = [
-    "pytest>=8.0",
-    "ruff>=0.8",
-]
+
+# Dev tooling lives in [dependency-groups] (PEP 735), not optional-dependencies, so a
+# bare `uv sync` installs it — a fresh clone can run its own README-documented
+# `uv run pytest` without pulling the whole training stack.
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.8"]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["automataleague"]
+packages = ["automataleague_parkour"]
 
 [tool.ruff]
 line-length = 100
@@ -50,5 +55,5 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "gpu: requires a CUDA device + mujoco-warp (run on the spark/jetson)",
+    "gpu: requires a CUDA device + mujoco-warp",
 ]

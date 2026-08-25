@@ -1,7 +1,12 @@
-import torch
-from omegaconf import OmegaConf
-from automataleague.robots import get_robot
-from automataleague.training.models import build_actor, _pad_obs_input
+import pytest
+
+pytest.importorskip("torchrl", reason="torchrl ships in the `train` extra")
+
+import torch  # noqa: E402
+from omegaconf import OmegaConf  # noqa: E402
+
+from automataleague_parkour.robots import get_robot  # noqa: E402
+from automataleague_parkour.training.models import _pad_obs_input, build_actor  # noqa: E402
 
 
 def _cfg(scan):
@@ -30,7 +35,8 @@ def test_pad_obs_input_zero_pads_first_layer():
 
 def test_get_activation_maps_elu():
     import torch
-    from automataleague.training.models import get_activation
     from omegaconf import OmegaConf
+
+    from automataleague_parkour.training.models import get_activation
     cfg = OmegaConf.create({"network": {"activation": "elu"}})
     assert get_activation(cfg) is torch.nn.ELU

@@ -1,0 +1,21 @@
+"""Parkour task: walk a corridor from start to finish, hitting checkpoints."""
+
+from automataleague_parkour.envs.parkour.config import (
+    ParkourConfig,
+    RewardConfig,
+    TerminationConfig,
+)
+from automataleague_parkour.envs.parkour.scene import (
+    SceneInfo,
+    build_parkour_model,
+    build_race_model,
+)
+
+__all__ = [
+    "ParkourConfig",
+    "RewardConfig",
+    "TerminationConfig",
+    "SceneInfo",
+    "build_parkour_model",
+    "build_race_model",
+]

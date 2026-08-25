@@ -2,7 +2,7 @@ import math
 
 import torch
 
-from automataleague.envs.parkour import spatial
+from automataleague_parkour.envs.parkour import spatial
 
 
 def test_projected_gravity_upright(identity_quat):

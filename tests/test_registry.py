@@ -1,6 +1,6 @@
 import pytest
-from automataleague import make_env, list_environments, get_env_spec
-from automataleague.envs.registry import EnvSpec
+
+from automataleague_parkour import get_env_spec, list_environments, make_env
 
 
 def test_parkour1_registered():
@@ -21,7 +21,7 @@ def test_config_resolves_per_level():
     assert c.track == "circuit"
     assert c.level_difficulty == 2
     assert c.height_scan is True
-    assert c.action_scale == pytest.approx(0.50)
+    assert c.action_scale == pytest.approx(0.70)   # L2: what cleared the hurdle
     # override wins
     assert spec.config(2, race_mode=True).race_mode is True
 

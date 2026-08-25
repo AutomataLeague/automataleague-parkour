@@ -32,7 +32,7 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/3e/38/7859ff46355f76f8d19459005ca000b6e7012f2f1ca597746cbcd1fbfe5e/antlr4-python3-runtime-4.9.3.tar.gz", hash = "sha256:f224469b4168294902bb1efa80a8bf7855f24c99aef99cbefc1bcd3cce77881b", size = 117034, upload-time = "2021-11-06T17:52:23.524Z" }
 
 [[package]]
-name = "automataleague"
+name = "automataleague-parkour"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
@@ -42,13 +42,10 @@ dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "torch" },
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-    { name = "ruff" },
-]
 gpu = [
     { name = "mujoco-warp" },
 ]
@@ -56,10 +53,15 @@ train = [
     { name = "hydra-core" },
     { name = "moviepy" },
     { name = "tensordict" },
-    { name = "torch" },
     { name = "torchrl" },
     { name = "tqdm" },
     { name = "wandb" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -71,15 +73,19 @@ requires-dist = [
     { name = "mujoco", specifier = ">=3.4.0" },
     { name = "mujoco-warp", marker = "extra == 'gpu'" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8" },
     { name = "tensordict", marker = "extra == 'train'", specifier = ">=0.6" },
-    { name = "torch", marker = "extra == 'train'", specifier = ">=2.4" },
+    { name = "torch", specifier = ">=2.4" },
     { name = "torchrl", marker = "extra == 'train'", specifier = ">=0.6" },
     { name = "tqdm", marker = "extra == 'train'", specifier = ">=4.66" },
     { name = "wandb", marker = "extra == 'train'", specifier = ">=0.18" },
 ]
-provides-extras = ["train", "gpu", "dev"]
+provides-extras = ["train", "gpu"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "ruff", specifier = ">=0.8" },
+]
 
 [[package]]
 name = "certifi"

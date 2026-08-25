@@ -1,0 +1,44 @@
+# Racing preset for parkour-1: a time trial where the goal is the fastest lap, not just
+# reaching the finish. Composes examples/config_ppo.yaml and overrides only the race
+# keys, so everything else (network, loss, optim, logger) stays in one place and any
+# value can still be overridden on the command line.
+#
+#   uv run python examples/ppo_race.py                        # race the flat circuit (level 0)
+#   uv run python examples/ppo_race.py env.course.level_difficulty=2 env.course.height_scan=true
+#                                                             # race an obstacle course
+defaults:
+  - config_ppo
+  - _self_
+
+env:
+  max_episode_steps: null          # per-level budget (flat 2000, obstacles 3000)
+  course:
+    level_difficulty: 0            # 0 = flat (no obstacles); 1..4 add obstacles
+    height_scan: true              # on everywhere, so every policy sees the terrain ahead
+    race_mode: true                # navigate by along-track speed + gate crossing, so the
+                                   # agent finds the time-optimal line instead of dipping to
+                                   # each gate centre
+    track_perception: boundary     # see the LEFT/RIGHT corridor edges ahead -> can cut the apex
+    action_scale: 0.5              # wider joint range than the level-0 default (0.30); lets a
+                                   # faster gait emerge instead of prescribing the stock one
+  # Time-trial reward: minimise lap time. `alive` is the per-step time cost (every step the
+  # agent is not finished costs it); `success` must exceed alive*max_steps so that finishing
+  # always stays net-positive. No progress/checkpoint shaping — the fast line is discovered,
+  # not rewarded.
+  reward_weights:
+    forward: 2.0                   # reward along-track speed, up to target_speed
+    target_speed: 4.0              # m/s; forward reward saturates here
+    progress: 0
+    checkpoint: 0
+    alive: -0.1
+    success: 500                   # must beat the worst-case time cost: alive * the
+                                   # per-level episode budget = 0.1 * 3000 = 300. At the
+                                   # old 300 the two were equal and finishing stopped
+                                   # being net-positive on obstacle levels.
+
+# Lower entropy than the obstacle preset. The flat time trial rewards committing to a
+# fast, decisive gait; the default 0.01 kept the racer jittery and slow. Measured on a
+# flat racer warm-started from a level-0 runner: 0.01 -> 23.0s, 0.003 -> 18.7s (6/6 seeds).
+# Raising it instead (0.03) made the policy diverge. See training-recipe.md.
+loss:
+  entropy_coeff: 0.003

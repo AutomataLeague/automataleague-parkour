@@ -1,7 +1,7 @@
 import torch
 
-from automataleague.envs.parkour import navigation as nav
-from automataleague.envs.parkour.state import ParkourState
+from automataleague_parkour.envs.parkour import navigation as nav
+from automataleague_parkour.envs.parkour.state import ParkourState
 
 
 def _state_at(x, y, yaw=0.0, N=1):
@@ -60,7 +60,6 @@ def test_forward_velocity_negative_when_moving_away():
 
 
 def test_advance_on_reach():
-    cps = torch.tensor([[3.0, 0.0], [6.0, 0.0], [9.0, 0.0]])
     dist = torch.tensor([0.3])                     # within radius 0.5
     idx, inter, fin = nav.advance_checkpoints(dist, torch.tensor([0]), 0.5, num_cp=3)
     assert idx.item() == 1 and inter.item() and not fin.item()
