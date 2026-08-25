@@ -70,7 +70,7 @@ class ParkourEnvCPU:
         """TorchRL spec for this env's observation.
 
         torchrl is imported lazily, and nowhere else in this module, so the CPU env
-        — task logic, rendering, evaluation — works on a bare `uv sync` without the
+        (task logic, rendering, evaluation) works on a bare `uv sync` without the
         `train` extra. Only this spec needs it.
         """
         from torchrl.data import Composite, Unbounded
