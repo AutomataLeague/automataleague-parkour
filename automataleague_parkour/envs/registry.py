@@ -30,7 +30,7 @@ class EnvSpec:
     action_scale_by_level: tuple[float, ...]   # per-level q-target scale (radians)
     # Per-level episode budget, in control steps at 50 Hz. Harder levels are slower,
     # and an episode that ends before the finish never pays the success bonus and
-    # never trains the last part of the course — the policy is optimising a lap it
+    # never trains the last part of the course: the policy is optimising a lap it
     # is not allowed to complete. Sized from measured lap times with headroom.
     max_episode_steps_by_level: tuple[int, ...] = ()
     height_scan: bool = True

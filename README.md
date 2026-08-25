@@ -32,7 +32,7 @@ Headless rendering needs a GL backend: `MUJOCO_GL=egl`.
 
 <p align="center">
   <sub>A trained policy on the circuit: starting a lap, carrying speed through a bend, and the
-  paving field at level 2. Yellow lines are checkpoint gates, white is the corridor boundary —
+  paving field at level 2. Yellow lines are checkpoint gates, white is the corridor boundary;
   stray past it and the episode ends.</sub>
 </p>
 
@@ -52,7 +52,7 @@ env = make_env("parkour-1", robot="spot", level=0, backend="cpu")               
 env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048)  # training
 ```
 
-* **`level` 0 is flat** — the winding loop and nothing else, and the setting for racing. Levels
+* **`level` 0 is flat**: the winding loop and nothing else, and the setting for racing. Levels
   **1 to 4** add obstacles of rising height and widen the action range to match.
 * **Two games on the same circuit.** *Complete* (default) reaches the finish, rewarded by progress
   plus a finish bonus. *Race* (`race_mode=true`) is a time trial for the fastest lap.
@@ -63,7 +63,7 @@ env = make_env("parkour-1", robot="spot", level=2, backend="warp", num_envs=2048
   `make_env("parkour-1", robot="spot", race_mode=True, track_perception="none")`.
 
 <details>
-<summary><b>The reward</b> — terms, weights, and why the racing preset differs</summary>
+<summary><b>The reward</b>: terms, weights, and why the racing preset differs</summary>
 
 <br>
 
@@ -86,7 +86,7 @@ before comparing them.
 
 `forward` is the dense driver that makes walking emerge, and **its saturation matters**: above
 `target_speed` it is flat, so nothing here pushes a policy faster. That is what the racing preset
-changes — it zeroes `progress` and `checkpoint`, sets `alive` negative so every step costs time,
+changes: it zeroes `progress` and `checkpoint`, sets `alive` negative so every step costs time,
 and raises `success` to 500 so a finished lap still clears the accumulated cost. Racing speed
 comes from the clock, not from a shaping term.
 
@@ -119,7 +119,7 @@ On the shipped defaults at 30M frames per level, scored over 6 noisy starts:
 > gate to check before spending the next block of GPU time, and the things that went wrong.
 
 <details>
-<summary><b>What actually moves the numbers</b> — measured, one variable at a time</summary>
+<summary><b>What actually moves the numbers</b>: measured, one variable at a time</summary>
 
 <br>
 
@@ -134,9 +134,9 @@ On level 1, 6 noisy starts each:
 
 All three are defaults now, not flags to remember:
 
-* **Frames are the dominant lever.** Budget before cleverness.
+* **Frames are the dominant lever.**
 * **Obstacle domain randomization** scales each obstacle per episode by `U(0.5, 1.5)` around the
-  level's nominal height — an implicit within-level curriculum, which is how a policy gets a
+  level's nominal height, an implicit within-level curriculum. That is how a policy gets a
   first success to learn from. Evaluation forces the factor to 1.0, so scores stay on the
   nominal course.
 * **Episodes must be long enough to contain a lap** (2000 steps flat, 3000 on obstacles). At the
@@ -151,7 +151,7 @@ per-level frame budget and action scale live under `curriculum:` in the config.
 ## Racing
 
 A time trial on the same circuit: fastest lap, not just reaching the finish.
-`examples/ppo_race.py` uses `examples/config_race.yaml` — `race_mode` navigation (scored on
+`examples/ppo_race.py` uses `examples/config_race.yaml`: `race_mode` navigation (scored on
 along-track speed and gate crossings, so the agent finds the time-optimal line instead of dipping
 to each gate centre), a lap-time reward, and a wider action scale.
 
@@ -159,13 +159,15 @@ to each gate centre), a lap-time reward, and a wider action scale.
 `boundary` (the default) gives the left and right corridor edges at each lookahead so it can cut
 the apex; `centerline` gives the midline; `none` is blind, for ablations.
 
-It is load-bearing rather than decoration. Zeroing each block on the trained racer's own
-trajectory:
+Zeroing each block on the trained racer's own trajectory shows how much it relies on each:
 
 | block zeroed | action change | rollout |
 |---|---|---|
 | `height_scan` | 1.4 % | 4/4 finishes |
 | `track_preview` | **29.0 %** | **0/4 finishes** |
+
+Without the corridor ahead the racer stops finishing at all. The height scan barely registers
+on a flat course, which is what you would expect with no terrain to scan.
 
 ## Watch and evaluate a policy
 
@@ -179,7 +181,7 @@ uv run python tools/eval_policy.py checkpoints/race_L0/ppo_best.pt --seeds 8
 ```
 
 Each start uses the same Gaussian noise training resets with, and a lap counts as finished on the
-env's terminal outcome. **This is the ranking signal to trust** — a single greedy eval rollout
+env's terminal outcome. **This is the ranking signal to trust**. A single greedy eval rollout
 disagreed with it repeatedly here. Both run on the CPU backend, so no GPU is needed.
 
 ## Simulation speed
@@ -189,14 +191,14 @@ parallel envs. It climbs with `num_envs` as parallelism amortizes the fixed cost
 
 | num_envs | 512 | 1024 | 2048 | 4096 |
 |---|---|---|---|---|
-| observed env steps/s | 10k – 60k | 10k – 85k | 12k – 105k | 13k – 110k |
+| observed env steps/s | 10k to 60k | 10k to 85k | 12k to 105k | 13k to 110k |
 
 The spread is hardware. Run `tools/benchmark_env.py` for your own number; it prints the sensor
 config it measured, since the observation is 49 columns with both sensors off and 78 with both on.
 The single-env CPU backend runs at roughly **1.2k steps/s**.
 
 <details>
-<summary><b>Adding a custom robot</b> — the RobotSpec contract, worked through Go1</summary>
+<summary><b>Adding a custom robot</b>: the RobotSpec contract, worked through Go1</summary>
 
 <br>
 
@@ -215,7 +217,7 @@ Unitree **Go1** is the worked example, and it is nothing like Spot: half the sta
 > to the model. Worth knowing before you vendor any Menagerie robot.
 
 **2. Write the factory** in `automataleague_parkour/robots/<name>.py`, reading every field off the
-model's own `home` keyframe and docs — see `unitree_go1.py`. Two things matter most:
+model's own `home` keyframe and docs; see `unitree_go1.py`. Two things matter most:
 
 * **Joint order is the contract.** `joint_names`, `actuator_names` and `home_joint_qpos` must line
   up index for index and match the actuator order in the MJCF. Get it wrong and the policy drives
@@ -223,12 +225,12 @@ model's own `home` keyframe and docs — see `unitree_go1.py`. Two things matter
 * **`home_joint_qpos` is the stance the policy perturbs around** (`q_target = home + action_scale
   * action`), so a good standing pose is what makes locomotion learnable.
 
-`foot_geom_names` is optional — name the foot geoms and the foot air-time gait reward can find
+`foot_geom_names` is optional: name the foot geoms and the foot air-time gait reward can find
 them.
 
 **3. Register it** in `robots/__init__.py`: `ROBOTS = {"spot": make_spot, "go1": make_go1}`.
 
-That is all — now use it anywhere Spot goes, including `examples/ppo_single.py env.robot=go1`.
+That is all. Now use it anywhere Spot goes, including `examples/ppo_single.py env.robot=go1`.
 The PPO networks size themselves from the env specs, so no training code changes. Different
 robots often want a different *reward* though: Go1 walks cleanly once the foot air-time term is
 on, which is what the `reward_fn` hook is for.
@@ -236,7 +238,7 @@ on, which is what the `reward_fn` hook is for.
 </details>
 
 <details>
-<summary><b>Adding a custom reward</b> — retune, replace, or extend</summary>
+<summary><b>Adding a custom reward</b>: retune, replace, or extend</summary>
 
 <br>
 
@@ -253,7 +255,7 @@ env = make_env("parkour-1", robot="spot",
 uv run python examples/ppo_single.py env.reward_weights.forward=2.0
 ```
 
-**Replace it entirely** — pass `reward_fn` to `make_env`. It takes the same arguments as
+**Replace it entirely** by passing `reward_fn` to `make_env`. It takes the same arguments as
 `compute_reward` and returns `(reward, components)`. This lets the reward travel with the robot
 while the env stays fixed:
 
@@ -266,7 +268,7 @@ def my_reward(state, prev_dist, cur_dist, reached_intermediate, reached_finish,
 env = make_env("parkour-1", robot="go1", reward_fn=my_reward)
 ```
 
-**Add a term to the default** — add a weight field to `RewardConfig`, compute it in
+**Add a term to the default** by adding a weight field to `RewardConfig`, computing it in
 `compute_reward` and add it to the returned sum, then expose it under `reward_weights` in
 `examples/config_ppo.yaml`.
 
@@ -289,7 +291,7 @@ training stack. Training-integration tests need `--extra train`; `gpu`-marked te
 
 ## Roadmap
 
-* **A policy contract**, so a policy this repo did not train can be evaluated — our sibling sumo
+* **A policy contract**, so a policy this repo did not train can be evaluated. Our sibling sumo
   project has one and parkour does not.
 * **A leaderboard** over the eval results, making runs comparable across training runs rather
   than only within one.

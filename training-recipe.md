@@ -37,7 +37,7 @@ policy the information, not the answer.**
 
 *Measured on the flat circuit (level 0) only.* Boundary perception over obstacles
 is wired and tested but has never been trained, so treat the transfer as an open
-question rather than a result — and see the caveat under
+question rather than a result. See also the caveat under
 [Results](#the-racing-line-came-from-perception-not-reward-shaping), where the same
 sensor helped one learner and hurt another.
 
@@ -178,7 +178,7 @@ measured on level 1 (2.5 cm paving, the easiest obstacle), 6 noisy starts:
 > **Gate.** Check `eval/reached_finish` per level before letting the curriculum
 > advance. A level that never finishes will warm-start the next one from a broken
 > policy. Each level also drops `videos/parkour1_curriculum_L<n>.mp4` as it finishes
-> — watch it. The curve tells you the reward went up; only the video tells you the
+> and watch it. The curve tells you the reward went up; only the video tells you the
 > robot is running rather than shuffling into a wall it happens to score well against.
 
 ### 3. Race the flat circuit (time trial)
@@ -224,8 +224,8 @@ winner run with `tools/render_policy.py <ckpt> -o lap.mp4`.
 
 ## What the recipe delivers
 
-Run end to end on the shipped defaults — 78-wide observation, DR on, per-level episode
-budget, `action_scale` 0.30/0.70/0.70/0.79, **30M frames per level** — and scored over
+Run end to end on the shipped defaults (78-wide observation, DR on, per-level episode
+budget, `action_scale` 0.30/0.70/0.70/0.79, **30M frames per level**), scored over
 6 noisy starts with a 4000-step cap:
 
 | stage | finishes | median lap |
@@ -249,7 +249,7 @@ knowing before you read your own numbers as failure:
   than obstacle-limited. Raising it is untested.
 
 At a tenth of this budget (10M/level, DR off, 1000-step episodes) the same chain scored
-6/6, 2/6, 2/6, 2/6, 0/6 — so the settings above are load-bearing, and the single biggest
+6/6, 2/6, 2/6, 2/6, 0/6, so the settings above are load-bearing, and the single biggest
 one is frames.
 
 ## Episode budget
@@ -270,7 +270,7 @@ This matters more than it looks. The cap used to be a flat 1000 steps for the
 completion task while a lap took ~1465, so **every training episode was truncated
 before the finish**: the `success` bonus was never paid, and the last third of the
 course was never visited. The racing preset already carried 2000 with the comment "a
-full lap is longer than an obstacle sprint" — the completion config never got the same
+full lap is longer than an obstacle sprint". The completion config never got the same
 treatment, and racing is also the one preset that scored 6/6.
 
 Lengthening episodes interacts with the reward, which is why the preflight in stage 0
@@ -286,23 +286,23 @@ The observation is a proprioceptive block plus two sensor blocks, always in this
 | block | width (Spot) | what it gives the policy |
 | --- | --- | --- |
 | `proprio` | 49 | base velocity, gravity direction, joint state, previous action, vector to the next gate |
-| `height_scan` | 12 | terrain heights sampled ahead of the feet — sees obstacles before touching them |
+| `height_scan` | 12 | terrain heights sampled ahead of the feet, so obstacles are seen before contact |
 | `track_preview` | 17 | left and right corridor edges at 4 lookaheads, plus the signed lateral offset |
 
 **All three are on by default**, so `parkour-1` is a 78-wide observation everywhere,
 and any checkpoint warm-starts any run.
 
 The blocks can be turned off individually (`env.course.height_scan=false`,
-`env.course.track_perception=none`) for ablations — that is how finding 1 was
+`env.course.track_perception=none`) for ablations; that is how finding 1 was
 measured. If you do, know what it costs you: warm-starting zero-pads the policy's
 first layer, which is only correct when the checkpoint's layout is a **prefix** of
-the target's — every block it had, same width, same position.
+the target's: every block it had, same width, same position.
 
 The trap this closes: a scan-only policy is `[proprio | scan]` = 61 and a
 preview-only racer is `[proprio | preview]` = 66. The target is *wider*, so
 width-only padding accepted it and fed boundary-preview values into weights trained
-on terrain heights — no error, no log line, just a run starting from a scrambled
-policy. `run_ppo` now compares layouts and refuses, naming both sides. The layout is
+on terrain heights, with no error and no log line, just a run starting from a
+scrambled policy. `run_ppo` now compares layouts and refuses, naming both sides. The layout is
 written into every checkpoint and reconstructed from the hydra config for older ones.
 
 Two consequences worth knowing:

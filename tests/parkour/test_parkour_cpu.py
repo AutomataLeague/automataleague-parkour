@@ -4,7 +4,7 @@ from automataleague_parkour.envs.parkour.config import ParkourConfig
 from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
 
 # Both optional sensors off, so the observation is the bare robot.obs_dim (49). This is
-# NOT the default any more — parkour-1 ships both sensors on — so it is stated explicitly:
+# NOT the default any more (parkour-1 ships both sensors on), so it is stated explicitly:
 # these tests pin the proprioceptive block, independent of what the defaults do.
 _BARE = ParkourConfig(track_perception="none", height_scan=False)
 
