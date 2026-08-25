@@ -2,8 +2,10 @@
 env:
   name: parkour-1
   robot: spot
-  num_envs: 2048           # scaled for Jetson Orin; raise on bigger GPUs
-  max_episode_steps: 1000
+  num_envs: 2048           # lower it if you run out of memory, raise it on a bigger GPU
+  max_episode_steps: null  # null => per-level budget from the registry (flat 2000,
+                           # obstacles 3000). A lap is ~1465 steps, so a shorter cap
+                           # truncates every episode before the finish.
   seed: 42
   frame_skip: 10           # ~50 Hz control
 
@@ -12,8 +14,13 @@ env:
     length: 9.0
     half_width: 1.6
     level_difficulty: 0   # Stage-1 obstacles: 0=flat, 1..4 harder
-    height_scan: false    # append 12-point forward terrain scan to the obs (obs 49->61)
-    randomize_obstacles: false   # per-episode obstacle DR ~ U(dr_low,dr_high)*level (eval=1.0)
+    height_scan: true     # 12-point forward terrain scan (obs +12); on so the policy can see
+                          # obstacles at levels 1..4. Harmless at level 0 (flat ground).
+    randomize_obstacles: true    # per-episode obstacle scaling ~ U(dr_low,dr_high) around the
+                                 # level's nominal height. An implicit within-level curriculum:
+                                 # some episodes land easier, which is how the policy gets a
+                                 # first success to learn from. Eval forces it off (factor 1.0),
+                                 # so scores are always on the nominal course.
     dr_low: 0.5
     dr_high: 1.5
     # action range: q_target = home + action_scale*action. null => robot default (0.3).
@@ -27,15 +34,14 @@ env:
     #   env.course.race_mode=true env.reward_weights.progress=0 env.reward_weights.checkpoint=0 \
     #   env.reward_weights.alive=-0.03 env.reward_weights.target_speed=2.5 env.reward_weights.forward=2.0
     race_mode: false
-    # track perception: append K lookahead points ahead of the agent (in its own frame)
-    # plus the signed lateral offset, so it can see the track shape and plan a line instead
-    # of beelining to gate centres. One knob:
-    #   boundary   (default) K left+right corridor-edge points -> perceives the channel,
-    #                        can cut the apex; obs grows by 4*len+1
-    #   centerline           K midline points -> tracks the middle; obs grows by 2*len+1
+    # track perception: append K lookahead points ahead of the agent so it can plan a
+    # line through the corridor. Off for the completion task (reach the finish); racing
+    # turns it on, see examples/config_race.yaml. One knob:
     #   none                 disabled (blind to the track ahead)
+    #   boundary             K left+right corridor-edge points -> perceives the channel
+    #   centerline           K midline points -> tracks the middle
     track_perception: boundary
-    preview_distances: [1.5, 3.0, 4.5, 6.0]   # arc-length metres ahead
+    preview_distances: [1.5, 3.0, 4.5, 6.0]   # arc-length metres ahead (used when on)
 
   # Forward-velocity is the dense locomotion driver (makes moving beat standing);
   # progress adds goal shaping; success/checkpoint are the big goal bonuses.
@@ -102,6 +108,12 @@ logger:
   eval_iter: 1_000_000   # eval + video every 1M frames
   video: true
   video_steps: 4000      # eval-video upper bound; clip ends early at episode done
+  # Render an mp4 from each stage's best checkpoint when that stage finishes, to
+  # videos/<run_name>.mp4. The curriculum therefore leaves one clip per level, so a
+  # level that trained badly is visible without waiting for the whole chain.
+  stage_video: true
+  stage_video_camera: chase     # chase | drone_side | drone | top | side | front | over_shoulder
+  stage_video_steps: 2500
   log_outcome_breakdown: true
 
 # Curriculum (consumed by ppo_curriculum.py; ppo_single.py ignores it).
@@ -109,6 +121,6 @@ logger:
 curriculum:
   levels: [1, 2, 3, 4]
   frames_per_level: [10_000_000, 10_000_000, 10_000_000, 20_000_000]
-  action_scale_per_level: [0.30, 0.50, 0.70, 0.79]
+  action_scale_per_level: [0.30, 0.70, 0.70, 0.79]   # L1..L4; matches the runs that cleared them
   warm_start: true          # carry weights level -> level
   eval_per_level: true

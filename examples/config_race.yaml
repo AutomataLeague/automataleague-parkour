@@ -11,9 +11,10 @@ defaults:
   - _self_
 
 env:
-  max_episode_steps: 2000          # a full lap is longer than an obstacle sprint
+  max_episode_steps: null          # per-level budget (flat 2000, obstacles 3000)
   course:
     level_difficulty: 0            # 0 = flat (no obstacles); 1..4 add obstacles
+    height_scan: true              # on everywhere, so every policy sees the terrain ahead
     race_mode: true                # navigate by along-track speed + gate crossing, so the
                                    # agent finds the time-optimal line instead of dipping to
                                    # each gate centre
@@ -30,7 +31,10 @@ env:
     progress: 0
     checkpoint: 0
     alive: -0.1
-    success: 300
+    success: 500                   # must beat the worst-case time cost: alive * the
+                                   # per-level episode budget = 0.1 * 3000 = 300. At the
+                                   # old 300 the two were equal and finishing stopped
+                                   # being net-positive on obstacle levels.
 
 # Lower entropy than the obstacle preset. The flat time trial rewards committing to a
 # fast, decisive gait; the default 0.01 kept the racer jittery and slow. Measured on a

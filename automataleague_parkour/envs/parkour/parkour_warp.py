@@ -12,7 +12,6 @@ Usage with TorchRL:
 
 from __future__ import annotations
 
-import mujoco
 import mujoco_warp as mjw
 import torch
 import warp as wp
@@ -20,7 +19,11 @@ from tensordict import TensorDict, TensorDictBase
 from torchrl.data import Bounded, Composite, Unbounded
 from torchrl.envs import EnvBase
 
+from automataleague_parkour.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour import path_preview
 from automataleague_parkour.envs.parkour.config import (
+    DEFAULT_RESET_JOINT_NOISE,
+    DEFAULT_RESET_POS_NOISE,
     ParkourConfig,
     RewardConfig,
     TerminationConfig,
@@ -33,8 +36,6 @@ from automataleague_parkour.envs.parkour.navigation import (
     point_to_polyline_distance,
     race_nav,
 )
-from automataleague_parkour.envs.parkour import height_scan as hs
-from automataleague_parkour.envs.parkour import path_preview
 from automataleague_parkour.envs.parkour.observation import build_observation
 from automataleague_parkour.envs.parkour.rewards import compute_reward
 from automataleague_parkour.envs.parkour.scene import build_parkour_model
@@ -84,8 +85,8 @@ class ParkourEnvWarp(EnvBase):
         njmax: int = 200,
         nconmax: int = 40,
         # reset noise (small domain randomization on the start pose)
-        reset_pos_noise: float = 0.05,
-        reset_joint_noise: float = 0.05,
+        reset_pos_noise: float = DEFAULT_RESET_POS_NOISE,
+        reset_joint_noise: float = DEFAULT_RESET_JOINT_NOISE,
     ):
         self._num_envs = num_envs
         self._device = torch.device(device)
@@ -296,7 +297,8 @@ class ParkourEnvWarp(EnvBase):
     def _make_spec(self, td_params=None):
         d = self._device
         self.observation_spec = Composite(
-            observation=Unbounded(shape=(self._num_envs, self._obs_dim), dtype=torch.float32, device=d),
+            observation=Unbounded(shape=(self._num_envs, self._obs_dim),
+                                  dtype=torch.float32, device=d),
             shape=(self._num_envs,),
         )
         self.action_spec = Composite(

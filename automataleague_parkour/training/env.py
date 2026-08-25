@@ -55,7 +55,10 @@ def configs_from_cfg(cfg):
         for k in ("fall_height", "max_tilt_deg", "off_path"):
             if hasattr(cfg.env.termination, k):
                 setattr(tc, k, getattr(cfg.env.termination, k))
-    tc.max_episode_steps = cfg.env.max_episode_steps
+    # null => the registry's per-level budget; an explicit value always wins.
+    steps = getattr(cfg.env, "max_episode_steps", None)
+    tc.max_episode_steps = (int(steps) if steps is not None
+                            else get_env_spec(cfg.env.name).max_episode_steps(level))
     return course, rc, tc
 
 
@@ -95,10 +98,12 @@ def apply_env_transforms(env, max_episode_steps):
 
 def make_environment(cfg):
     """Make train and eval environments."""
+    # Resolved once: cfg.env.max_episode_steps may be null, meaning "per-level budget".
+    _, _, tc = configs_from_cfg(cfg)
     train_env = env_maker(cfg)
-    train_env = apply_env_transforms(train_env, cfg.env.max_episode_steps)
+    train_env = apply_env_transforms(train_env, tc.max_episode_steps)
     eval_env = env_maker(cfg, num_envs=1, eval_mode=True)   # eval on the clean nominal course
-    eval_env = apply_env_transforms(eval_env, cfg.env.max_episode_steps)
+    eval_env = apply_env_transforms(eval_env, tc.max_episode_steps)
     return train_env, eval_env
 
 
@@ -117,7 +122,7 @@ def rollout_video(policy, cfg, max_steps=None, policy_device="cuda", render_size
         robot=cfg.env.robot, cfg=course, reward_cfg=rc, term_cfg=tc,
         render_size=render_size, frame_skip=getattr(cfg.env, "frame_skip", 10),
     )
-    steps = max_steps or cfg.env.max_episode_steps
+    steps = max_steps or tc.max_episode_steps
     obs = env.reset()
     frames = []
     with set_exploration_type(ExplorationType.DETERMINISTIC), torch.no_grad():

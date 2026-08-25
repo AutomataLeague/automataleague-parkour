@@ -55,5 +55,5 @@ select = ["E", "F", "I", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
-    "gpu: requires a CUDA device + mujoco-warp (run on the spark/jetson)",
+    "gpu: requires a CUDA device + mujoco-warp",
 ]

@@ -36,4 +36,6 @@ def test_warp_env_throughput():
     torch.cuda.synchronize()
     sps = 100 * N / (time.time() - t0)
     print(f"throughput: {sps:,.0f} steps/sec ({N} envs)")
-    assert sps > 2_000  # conservative floor for Jetson Orin
+    # Deliberately far below any GPU we have measured: this asserts the batched env
+    # still steps, not that a particular device is fast.
+    assert sps > 2_000

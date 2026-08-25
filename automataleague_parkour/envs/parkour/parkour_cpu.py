@@ -9,8 +9,9 @@ from __future__ import annotations
 import mujoco
 import numpy as np
 import torch
-from torchrl.data import Composite, Unbounded
 
+from automataleague_parkour.envs.parkour import height_scan as hs
+from automataleague_parkour.envs.parkour import path_preview
 from automataleague_parkour.envs.parkour.config import (
     ParkourConfig,
     RewardConfig,
@@ -24,9 +25,7 @@ from automataleague_parkour.envs.parkour.navigation import (
     point_to_polyline_distance,
     race_nav,
 )
-from automataleague_parkour.envs.parkour import height_scan as hs
-from automataleague_parkour.envs.parkour import path_preview
-from automataleague_parkour.envs.parkour.observation import build_observation
+from automataleague_parkour.envs.parkour.observation import build_observation, obs_layout
 from automataleague_parkour.envs.parkour.rewards import compute_reward
 from automataleague_parkour.envs.parkour.scene import build_parkour_model
 from automataleague_parkour.envs.parkour.state import extract_state
@@ -60,19 +59,25 @@ class ParkourEnvCPU:
         self._preview_on, self._preview_mode = path_preview.resolve_perception(self.cfg)
         self._preview_dist = tuple(self.cfg.preview_distances)
 
-        self._obs_dim = (
-            self.robot.obs_dim
-            + (hs.SCAN_N if self.cfg.height_scan else 0)
-            + (path_preview.preview_dim(self._preview_dist, self._preview_mode)
-               if self._preview_on else 0)
-        )
-        self.observation_spec = Composite(
-            observation=Unbounded(shape=(self._obs_dim,), dtype=torch.float32),
-            shape=torch.Size([]),
-        )
+        self.obs_layout = obs_layout(self.cfg, self.robot)
+        self.obs_dim = self._obs_dim = sum(w for _, w in self.obs_layout)
 
         self._renderer = None
         self._render_size = render_size
+
+    @property
+    def observation_spec(self):
+        """TorchRL spec for this env's observation.
+
+        torchrl is imported lazily, and nowhere else in this module, so the CPU env
+        — task logic, rendering, evaluation — works on a bare `uv sync` without the
+        `train` extra. Only this spec needs it.
+        """
+        from torchrl.data import Composite, Unbounded
+        return Composite(
+            observation=Unbounded(shape=(self._obs_dim,), dtype=torch.float32),
+            shape=torch.Size([]),
+        )
 
     # --- helpers ---
     def _state(self):
@@ -111,8 +116,29 @@ class ParkourEnvCPU:
                                  self._home_joint, height_scan=self._scan(),
                                  track_preview=self._preview(st))
 
-    def reset(self):
-        self.data.qpos[:] = self.info.home_qpos
+    def reset(self, seed: int | None = None, pos_noise: float = 0.0,
+              joint_noise: float = 0.0):
+        """Reset to the home stance, optionally with the same start-pose noise the
+        batched trainer uses.
+
+        `pos_noise` / `joint_noise` are Gaussian sigmas (metres on the base xy,
+        radians on each actuated joint), matching `ParkourEnvWarp`'s reset. They
+        default to 0 so rendering and the task-logic tests stay reproducible, but
+        **evaluation should pass the training values** (`DEFAULT_RESET_POS_NOISE`,
+        `DEFAULT_RESET_JOINT_NOISE`): a clean deterministic start is out of
+        distribution, and scoring on one disagreed with real performance for days
+        (training-recipe.md, finding 5). `seed` makes the draw reproducible.
+        """
+        qpos = np.asarray(self.info.home_qpos, dtype=np.float64).copy()
+        if pos_noise or joint_noise:
+            rng = np.random.default_rng(seed)
+            if pos_noise:
+                ba = self.info.base_qposadr
+                qpos[ba:ba + 2] += rng.normal(0.0, pos_noise, size=2)
+            if joint_noise:
+                ja = self.info.joint_qposadr        # actuated joints, wherever they sit
+                qpos[ja] += rng.normal(0.0, joint_noise, size=len(ja))
+        self.data.qpos[:] = qpos
         self.data.qvel[:] = 0.0
         mujoco.mj_forward(self.model, self.data)
         self.cp_idx = torch.zeros(1, dtype=torch.long)

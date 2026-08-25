@@ -7,9 +7,17 @@ radius). The scene builder and the env read the same config, so they can't drift
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
+
+# Start-pose randomisation applied on reset, shared by both backends. Gaussian, in
+# metres on the base xy and radians on each actuated joint. Evaluation has to use the
+# SAME noise the policy trained under: a clean deterministic start is out of
+# distribution and its numbers disagreed with real performance for days here
+# (training-recipe.md, finding 5).
+DEFAULT_RESET_POS_NOISE = 0.05
+DEFAULT_RESET_JOINT_NOISE = 0.05
 
 
 @dataclass
@@ -26,24 +34,25 @@ class ParkourConfig:
     # --- perception (see height_scan.py). When True, append a 12-point forward
     # terrain height scan to the observation (obs_dim += SCAN_N). Lets the policy
     # anticipate obstacles instead of feeling them only on contact. ---
-    height_scan: bool = False
+    height_scan: bool = True
 
     # --- track perception (see path_preview.py). Appends K lookahead points ahead of
     # the agent (in its base frame) plus the signed lateral offset to the observation
     # (obs_dim += preview_dim(preview_distances, mode)), so the policy sees upcoming
-    # curves instead of reacting to heading error alone. Set via one knob:
+    # curves instead of reacting to heading error alone. Off by default; racing turns
+    # it on (see examples/config_race.yaml). Set via one knob:
+    #   "none"       : disabled (blind to the track ahead). The default.
     #   "boundary"   : a LEFT and a RIGHT corridor-edge point per lookahead (at
     #                  ±half_width) -> the policy perceives the drivable channel and
-    #                  can cut the apex. The default.
-    #   "centerline" : one centerline point per lookahead -> tracks the middle.
-    #   "none"       : disabled (blind to the track ahead). ---
+    #                  can cut the apex. What racing uses.
+    #   "centerline" : one centerline point per lookahead -> tracks the middle. ---
     track_perception: str = "boundary"
     preview_distances: tuple = (1.5, 3.0, 4.5, 6.0)  # lookahead distances (metres)
 
     # --- obstacle domain randomization (mocap-based, see obstacles.py). When True,
     # each episode draws a per-env difficulty factor ~ U(dr_low, dr_high) per DR
     # obstacle, with level_difficulty's value as the mean. Eval keeps factor = 1.
-    randomize_obstacles: bool = False
+    randomize_obstacles: bool = True
     dr_low: float = 0.5
     dr_high: float = 1.5
 

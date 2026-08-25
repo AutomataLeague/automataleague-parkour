@@ -1,4 +1,5 @@
 import torch
+
 from automataleague_parkour import make_env
 from automataleague_parkour.envs.parkour.path_preview import preview_dim
 
@@ -31,15 +32,15 @@ def test_cpu_obs_dim_grows_with_boundary_preview():
 
 
 def test_cpu_boundary_is_the_default_perception():
-    # parkour-1 defaults to track_perception="boundary"; asking for it explicitly must
-    # not change obs_dim.
-    dists = (1.5, 3.0, 4.5, 6.0)
-    default = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                       preview_distances=dists)
+    # parkour-1 ships BOTH sensors on: every policy sees the terrain ahead (height scan)
+    # and the corridor edges ahead (boundary preview). 49 + 12 + 17 = 78. Asking for the
+    # default explicitly must not change the width.
+    default = make_env("parkour-1", robot="spot", level=0, backend="cpu")
     explicit = make_env("parkour-1", robot="spot", level=0, backend="cpu",
-                        track_perception="boundary", preview_distances=dists)
+                        height_scan=True, track_perception="boundary",
+                        preview_distances=(1.5, 3.0, 4.5, 6.0))
     assert (default.observation_spec["observation"].shape[-1]
-            == explicit.observation_spec["observation"].shape[-1])
+            == explicit.observation_spec["observation"].shape[-1] == 78)
 
 
 def test_perception_none_is_scan_only_baseline():

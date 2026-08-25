@@ -28,7 +28,25 @@ class EnvSpec:
     track: str
     n_levels: int                              # difficulty levels 0..n_levels-1
     action_scale_by_level: tuple[float, ...]   # per-level q-target scale (radians)
+    # Per-level episode budget, in control steps at 50 Hz. Harder levels are slower,
+    # and an episode that ends before the finish never pays the success bonus and
+    # never trains the last part of the course — the policy is optimising a lap it
+    # is not allowed to complete. Sized from measured lap times with headroom.
+    max_episode_steps_by_level: tuple[int, ...] = ()
     height_scan: bool = True
+    track_perception: str = "boundary"   # none | centerline | boundary
+    # Per-episode obstacle scaling ~ U(dr_low, dr_high) around the level's nominal
+    # height. On by default: it is an implicit within-level curriculum (some episodes
+    # come out easier), which is what lets a policy get a first success to learn from.
+    # Evaluation forces it off, so scores are always on the nominal course.
+    randomize_obstacles: bool = True
+
+    def max_episode_steps(self, level: int) -> int:
+        """Episode budget for `level`, falling back to the last entry (then 3000)."""
+        if not self.max_episode_steps_by_level:
+            return 3000
+        idx = min(int(level), len(self.max_episode_steps_by_level) - 1)
+        return int(self.max_episode_steps_by_level[idx])
 
     def config(self, level: int, **overrides) -> ParkourConfig:
         """Default ParkourConfig for this env at `level`, before any hydra overrides."""
@@ -39,6 +57,8 @@ class EnvSpec:
             track=self.track,
             level_difficulty=level,
             height_scan=self.height_scan,
+            track_perception=self.track_perception,
+            randomize_obstacles=self.randomize_obstacles,
             action_scale=self.action_scale_by_level[level],
         )
         for k, v in overrides.items():
@@ -55,8 +75,15 @@ ENVIRONMENTS: dict[str, EnvSpec] = {
         description="Season 0 — winding closed circuit, 5 difficulty levels (flat -> L4).",
         track="circuit",
         n_levels=5,
-        action_scale_by_level=(0.30, 0.30, 0.50, 0.70, 0.79),
+        # L2 is 0.70, not the 0.50 the geometry alone suggests: 0.70 is what the
+        # runs that actually cleared level 2 used.
+        action_scale_by_level=(0.30, 0.30, 0.70, 0.70, 0.79),
+        # Measured laps: L0 ~1465 steps, obstacle levels 1600-2200 and slower still
+        # while learning. 3000 is the ceiling; flat needs less.
+        max_episode_steps_by_level=(2000, 3000, 3000, 3000, 3000),
         height_scan=True,
+        track_perception="boundary",
+        randomize_obstacles=True,
     ),
 }
 
@@ -90,7 +117,8 @@ def make_env(env_id, robot="spot", level=None, backend="warp", num_envs=None,
     tc = term_cfg if term_cfg is not None else TerminationConfig()
     if backend == "cpu":
         from automataleague_parkour.envs.parkour.parkour_cpu import ParkourEnvCPU
-        return ParkourEnvCPU(robot=robot, cfg=course, reward_cfg=rc, reward_fn=reward_fn, term_cfg=tc)
+        return ParkourEnvCPU(robot=robot, cfg=course, reward_cfg=rc,
+                             reward_fn=reward_fn, term_cfg=tc)
     if backend == "warp":
         from automataleague_parkour.envs.parkour.parkour_warp import ParkourEnvWarp  # GPU-only
         return ParkourEnvWarp(
