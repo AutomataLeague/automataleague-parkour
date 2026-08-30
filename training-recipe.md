@@ -252,6 +252,49 @@ At a tenth of this budget (10M/level, DR off, 1000-step episodes) the same chain
 6/6, 2/6, 2/6, 2/6, 0/6, so the settings above are load-bearing, and the single biggest
 one is frames.
 
+## Picking a racer: two traps
+
+Both of these cost a full render cycle. Neither shows up on the flat course; both
+appear the moment a time-trial policy meets obstacles.
+
+### Robustness and speed diverge as a time trial trains
+
+The lap gets faster while the finish rate falls. Measured on level 2, the last
+checkpoint of every run was worse than one from the middle:
+
+| run | most robust checkpoint | the trainer's own pick |
+| --- | --- | --- |
+| PPO 30M | `ppo_eval_15007744` 7/8 | `ppo_best.pt` 5/8 |
+| SAC 2M | `sac_eval_2000384` 7/8 | `sac_best.pt` 6/8 |
+| TD3 2M | `td3_eval_1600000` 7/8 | `td3_best.pt` 3/8 |
+
+This is finding 4 with a mechanism. `alive` is negative in the race preset, so every
+step costs; the policy keeps buying pace with stability long after the trade stops
+being worth it. `run_ppo` scores its "best" on `reached_finish * 1000 + max_checkpoint`,
+which happens to track robustness; the off-policy trainer scores on eval reward, which
+does not. **Rank the series on finishes, tie-broken by lap time**
+(`tools/rank_series.py`), and never race `_best.pt` on trust.
+
+### The same checkpoint scores differently on a different CPU
+
+MuJoCo's contact solver is not bit-identical across architectures, and a 20 s
+obstacle lap is chaotic enough to amplify that into a different outcome. The same
+checkpoint, same seeds, same step cap:
+
+| checkpoint | x86_64 | aarch64 |
+| --- | --- | --- |
+| `sac_eval_1200128` | 5/6 | 2/8 |
+| `ppo_best.pt` | 6/6 | 3/6 |
+| `td3_eval_1600000` | 5/6 | 7/8 |
+
+A policy whose finish rate collapses when you change machine was never robust; it was
+sitting on the boundary where numerical noise decides. The flat course does not show
+this (far less contact), which is why it is easy to miss.
+
+**Verify on both machines before you believe a number.** Selecting on one architecture
+alone picked a policy that finishes 2 of 8 on the other, and the genuinely robust SAC
+checkpoint was one that single-machine ranking had rejected.
+
 ## Episode budget
 
 `max_episode_steps` is `null` in the shipped configs, meaning "use the per-level budget

@@ -175,6 +175,8 @@ on a flat course, which is what you would expect with no terrain to scan.
 MUJOCO_GL=egl uv run python tools/render_policy.py checkpoints/race_L0/ppo_best.pt -o lap.mp4
 MUJOCO_GL=egl uv run python tools/render_policy.py CKPT --camera drone_side   # chase|top|...
 
+MUJOCO_GL=egl uv run python tools/rank_series.py checkpoints/race_L0   # rank a whole run
+
 uv run python tools/eval_policy.py checkpoints/race_L0/ppo_best.pt --seeds 8
 #   finished 8/8 starts
 #   lap time  median 22.9s  best 22.4s  [...]
