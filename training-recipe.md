@@ -252,6 +252,28 @@ At a tenth of this budget (10M/level, DR off, 1000-step episodes) the same chain
 6/6, 2/6, 2/6, 2/6, 0/6, so the settings above are load-bearing, and the single biggest
 one is frames.
 
+## Read the reward curve, not just the final score
+
+Every run writes `checkpoints/<run>/metrics.jsonl` unconditionally: episode return
+(reward summed over the episode), success rate, episode length, losses. Plot with
+`tools/plot_curves.py`.
+
+Without it there is no way to answer the only question that matters at the end of a
+run: **had it converged, or was it still climbing?** Six runs were finished here with
+`logger.backend=""` and left no curve at all; the answer turned out to be "still
+climbing" for one of them, by 131% over its final tenth.
+
+Two things the curve shows that a final score cannot:
+
+* **Return can rise while the task is not being solved.** A PPO racer on level 2
+  reached a return of 2500 with a **0.04 success rate** — nearly all of it from the
+  dense `forward` term, almost none from finishing. The return curve alone looks
+  healthy. Always plot success rate beside it.
+* **Whether a difference is real.** A single seed cannot separate an algorithm gap
+  from run-to-run variance. Name runs `<algo>_<setting>_s<seed>` and the plotter
+  aggregates seeds into a mean with a 95% CI band; if the bands overlap, there is no
+  result to report.
+
 ## Picking a racer: two traps
 
 Both of these cost a full render cycle. Neither shows up on the flat course; both

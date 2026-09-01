@@ -1,6 +1,9 @@
 """Env construction for training/eval — resolves configs through the env registry."""
 from __future__ import annotations
 
+import json
+import os
+
 import numpy as np
 import torch
 from tensordict import TensorDict
@@ -14,9 +17,28 @@ _COURSE_KEYS = ("track", "length", "half_width", "checkpoint_spacing", "finish_o
                 "dr_high", "action_scale", "race_mode", "preview_distances")
 
 
-def log_metrics(logger, metrics, step):
-    for name, value in metrics.items():
-        logger.log_scalar(name, value, step)
+def log_metrics(logger, metrics, step, jsonl_path=None):
+    """Record `metrics` at `step` to the torchrl logger and/or a local JSONL file.
+
+    The JSONL sink is written unconditionally when `jsonl_path` is given, including
+    when there is no logger backend. Without it a run with `logger.backend=""`
+    finishes leaving no learning curve at all, and there is then no way to tell a
+    converged run from one whose return was still climbing. Logging is cheap; a run
+    you cannot read is not.
+    """
+    if logger is not None:
+        for name, value in metrics.items():
+            logger.log_scalar(name, value, step)
+    if jsonl_path:
+        record = {"frames": int(step)}
+        for name, value in metrics.items():
+            try:
+                record[name] = float(value)
+            except (TypeError, ValueError):
+                continue
+        os.makedirs(os.path.dirname(os.path.abspath(jsonl_path)), exist_ok=True)
+        with open(jsonl_path, "a") as fh:
+            fh.write(json.dumps(record) + "\n")
 
 
 def configs_from_cfg(cfg):

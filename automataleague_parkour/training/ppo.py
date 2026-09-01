@@ -77,6 +77,7 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
     device = torch.device(device)
     checkpoint_dir = os.path.join(checkpoints_root, run_name)
     os.makedirs(checkpoint_dir, exist_ok=True)
+    metrics_path = os.path.join(checkpoint_dir, "metrics.jsonl")
 
     exp_name = generate_exp_name("PPO", f"{cfg.logger.exp_name}_{run_name}")
     logger = None
@@ -325,8 +326,8 @@ def run_ppo(cfg, *, level, total_frames, action_scale=None, init_ckpt=None,
                             collected_frames=collected_frames, cfg=cfg, layout=cur_layout)
             torchrl_logger.info(f"Saved checkpoint: {ckpt_path}")
 
-        if logger is not None:
-            log_metrics(logger, metrics_to_log, collected_frames)
+        # Always write the JSONL curve, logger backend or not.
+        log_metrics(logger, metrics_to_log, collected_frames, jsonl_path=metrics_path)
 
     final_ckpt_path = os.path.join(checkpoint_dir, "ppo_final.pt")
     save_checkpoint(final_ckpt_path, actor=actor, critic=critic,

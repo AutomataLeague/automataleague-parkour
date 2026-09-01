@@ -102,6 +102,12 @@ Entry points in `examples/`, run from the repo root. Hydra config is `examples/c
 any value can be overridden on the command line. Checkpoints land in `checkpoints/<run>/`, and
 each stage drops an eval video in `videos/`.
 
+Every run writes `checkpoints/<run>/metrics.jsonl` — episode return, success rate, episode
+length, losses, one row per batch — **whether or not a logger backend is configured**. Plot it
+with `tools/plot_curves.py`. Name runs `<algo>_<setting>_s<seed>` and it groups seeds
+automatically into a mean with a 95% CI band; without several seeds per configuration a gap
+between two algorithms cannot be told from run-to-run variance.
+
 ```bash
 uv run python examples/ppo_single.py env.course.level_difficulty=0   # flat
 uv run python examples/ppo_single.py env.course.level_difficulty=2   # one obstacle level
@@ -176,6 +182,7 @@ MUJOCO_GL=egl uv run python tools/render_policy.py checkpoints/race_L0/ppo_best.
 MUJOCO_GL=egl uv run python tools/render_policy.py CKPT --camera drone_side   # chase|top|...
 
 MUJOCO_GL=egl uv run python tools/rank_series.py checkpoints/race_L0   # rank a whole run
+uv run python tools/plot_curves.py --out renders/curves                # learning curves
 
 uv run python tools/eval_policy.py checkpoints/race_L0/ppo_best.pt --seeds 8
 #   finished 8/8 starts

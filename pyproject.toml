@@ -26,6 +26,8 @@ train = [
     "wandb>=0.18",
     "tqdm>=4.66",
     "moviepy>=1.0",   # required by wandb.Video for eval video logging
+    "seaborn>=0.13",  # tools/plot_curves.py: seeded learning curves
+    "pandas>=2.0",
 ]
 # GPU-parallel physics — MuJoCo Warp. Resolves from PyPI; needs a CUDA device at runtime.
 gpu = [

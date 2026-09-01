@@ -36,4 +36,5 @@ tools/*
 !tools/eval_policy.py
 !tools/benchmark_env.py
 !tools/rank_series.py
+!tools/plot_curves.py
 tests/test_eval_render_size.py
