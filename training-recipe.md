@@ -274,6 +274,44 @@ Two things the curve shows that a final score cannot:
   aggregates seeds into a mean with a 95% CI band; if the bands overlap, there is no
   result to report.
 
+## Comparing algorithms needs seeds, and most gaps do not survive them
+
+Three seeds each of PPO, SAC and TD3, on the flat circuit and on level 2, race reward,
+30M frames for PPO and 4M for the off-policy pair. Final episode return, mean over
+seeds:
+
+| setting | PPO | SAC | TD3 |
+| --- | --- | --- | --- |
+| flat | 6069 +/- 252 | 6362 +/- 471 | 6173 +/- 295 |
+| obstacles | 2296 +/- 59 | 4995 +/- 387 | 5507 +/- 239 |
+
+Welch t-tests on the final return (n=3):
+
+| comparison | difference | p | |
+| --- | --- | --- | --- |
+| flat, SAC vs TD3 | 190 | 0.59 | not distinguishable |
+| flat, SAC vs PPO | 293 | 0.41 | not distinguishable |
+| flat, TD3 vs PPO | 103 | 0.67 | not distinguishable |
+| obstacles, SAC vs TD3 | -512 | 0.14 | not distinguishable |
+| obstacles, SAC vs PPO | 2699 | **0.006** | real |
+| obstacles, TD3 vs PPO | 3211 | **0.001** | real |
+
+**On the flat circuit none of the three can be separated.** Seed spread inside one
+algorithm (SAC spans 6025 to 6901) is larger than every gap between algorithms. Any
+ranking read off single runs there is noise, and single-run rankings were in fact
+produced twice during this work before the seeds were run.
+
+What does survive: the off-policy pair beats PPO on obstacles by a wide margin, and
+reaches its flat return in roughly a tenth of the environment steps.
+
+**PPO on level 2 is the cautionary case.** Return 2296, success rate **0.02 +/- 0.01**
+across all three seeds: it collects almost the whole return from the dense `forward`
+term while finishing one episode in fifty. Reproducible, not a bad seed. A return
+curve alone would call that a healthy run.
+
+Plot with `tools/plot_curves.py`; name runs `<algo>_<setting>_s<seed>` and seeds are
+grouped automatically.
+
 ## Picking a racer: two traps
 
 Both of these cost a full render cycle. Neither shows up on the flat course; both
