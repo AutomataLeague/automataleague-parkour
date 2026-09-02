@@ -252,6 +252,109 @@ At a tenth of this budget (10M/level, DR off, 1000-step episodes) the same chain
 6/6, 2/6, 2/6, 2/6, 0/6, so the settings above are load-bearing, and the single biggest
 one is frames.
 
+## Read the reward curve, not just the final score
+
+Every run writes `checkpoints/<run>/metrics.jsonl` unconditionally: episode return
+(reward summed over the episode), success rate, episode length, losses. Plot with
+`tools/plot_curves.py`.
+
+Without it there is no way to answer the only question that matters at the end of a
+run: **had it converged, or was it still climbing?** Six runs were finished here with
+`logger.backend=""` and left no curve at all; the answer turned out to be "still
+climbing" for one of them, by 131% over its final tenth.
+
+Two things the curve shows that a final score cannot:
+
+* **Return can rise while the task is not being solved.** A PPO racer on level 2
+  reached a return of 2500 with a **0.04 success rate** — nearly all of it from the
+  dense `forward` term, almost none from finishing. The return curve alone looks
+  healthy. Always plot success rate beside it.
+* **Whether a difference is real.** A single seed cannot separate an algorithm gap
+  from run-to-run variance. Name runs `<algo>_<setting>_s<seed>` and the plotter
+  aggregates seeds into a mean with a 95% CI band; if the bands overlap, there is no
+  result to report.
+
+## Comparing algorithms needs seeds, and most gaps do not survive them
+
+Three seeds each of PPO, SAC and TD3, on the flat circuit and on level 2, race reward,
+30M frames for PPO and 4M for the off-policy pair. Final episode return, mean over
+seeds:
+
+| setting | PPO | SAC | TD3 |
+| --- | --- | --- | --- |
+| flat | 6069 +/- 252 | 6362 +/- 471 | 6173 +/- 295 |
+| obstacles | 2296 +/- 59 | 4995 +/- 387 | 5507 +/- 239 |
+
+Welch t-tests on the final return (n=3):
+
+| comparison | difference | p | |
+| --- | --- | --- | --- |
+| flat, SAC vs TD3 | 190 | 0.59 | not distinguishable |
+| flat, SAC vs PPO | 293 | 0.41 | not distinguishable |
+| flat, TD3 vs PPO | 103 | 0.67 | not distinguishable |
+| obstacles, SAC vs TD3 | -512 | 0.14 | not distinguishable |
+| obstacles, SAC vs PPO | 2699 | **0.006** | real |
+| obstacles, TD3 vs PPO | 3211 | **0.001** | real |
+
+**On the flat circuit none of the three can be separated.** Seed spread inside one
+algorithm (SAC spans 6025 to 6901) is larger than every gap between algorithms. Any
+ranking read off single runs there is noise, and single-run rankings were in fact
+produced twice during this work before the seeds were run.
+
+What does survive: the off-policy pair beats PPO on obstacles by a wide margin, and
+reaches its flat return in roughly a tenth of the environment steps.
+
+**PPO on level 2 is the cautionary case.** Return 2296, success rate **0.02 +/- 0.01**
+across all three seeds: it collects almost the whole return from the dense `forward`
+term while finishing one episode in fifty. Reproducible, not a bad seed. A return
+curve alone would call that a healthy run.
+
+Plot with `tools/plot_curves.py`; name runs `<algo>_<setting>_s<seed>` and seeds are
+grouped automatically.
+
+## Picking a racer: two traps
+
+Both of these cost a full render cycle. Neither shows up on the flat course; both
+appear the moment a time-trial policy meets obstacles.
+
+### Robustness and speed diverge as a time trial trains
+
+The lap gets faster while the finish rate falls. Measured on level 2, the last
+checkpoint of every run was worse than one from the middle:
+
+| run | most robust checkpoint | the trainer's own pick |
+| --- | --- | --- |
+| PPO 30M | `ppo_eval_15007744` 7/8 | `ppo_best.pt` 5/8 |
+| SAC 2M | `sac_eval_2000384` 7/8 | `sac_best.pt` 6/8 |
+| TD3 2M | `td3_eval_1600000` 7/8 | `td3_best.pt` 3/8 |
+
+This is finding 4 with a mechanism. `alive` is negative in the race preset, so every
+step costs; the policy keeps buying pace with stability long after the trade stops
+being worth it. `run_ppo` scores its "best" on `reached_finish * 1000 + max_checkpoint`,
+which happens to track robustness; the off-policy trainer scores on eval reward, which
+does not. **Rank the series on finishes, tie-broken by lap time**
+(`tools/rank_series.py`), and never race `_best.pt` on trust.
+
+### The same checkpoint scores differently on a different CPU
+
+MuJoCo's contact solver is not bit-identical across architectures, and a 20 s
+obstacle lap is chaotic enough to amplify that into a different outcome. The same
+checkpoint, same seeds, same step cap:
+
+| checkpoint | x86_64 | aarch64 |
+| --- | --- | --- |
+| `sac_eval_1200128` | 5/6 | 2/8 |
+| `ppo_best.pt` | 6/6 | 3/6 |
+| `td3_eval_1600000` | 5/6 | 7/8 |
+
+A policy whose finish rate collapses when you change machine was never robust; it was
+sitting on the boundary where numerical noise decides. The flat course does not show
+this (far less contact), which is why it is easy to miss.
+
+**Verify on both machines before you believe a number.** Selecting on one architecture
+alone picked a policy that finishes 2 of 8 on the other, and the genuinely robust SAC
+checkpoint was one that single-machine ranking had rejected.
+
 ## Episode budget
 
 `max_episode_steps` is `null` in the shipped configs, meaning "use the per-level budget

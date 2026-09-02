@@ -28,7 +28,7 @@ def main(cfg):  # noqa: F821
         total_frames=cfg.collector.total_frames,
         action_scale=cfg.env.course.action_scale,
         init_ckpt=cfg.network.init_checkpoint,
-        run_name=f"race_L{cfg.env.course.level_difficulty}",
+        run_name=cfg.get("run_name") or f"race_L{cfg.env.course.level_difficulty}",
     )
     print(f"best checkpoint: {best}")
     render_stage_video(cfg, best, f"race_L{cfg.env.course.level_difficulty}")

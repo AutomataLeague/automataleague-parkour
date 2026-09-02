@@ -98,6 +98,11 @@ network:
   device: cuda
   init_checkpoint: null   # path to warm-start from (e.g. flat-circuit policy -> obstacles)
 
+# Explicit checkpoint/run name. null => the entry point's default (e.g. race_L0).
+# Set it to keep several runs of the same config apart, e.g. seed sweeps:
+#   uv run python examples/ppo_race.py env.seed=1 run_name=race_L0_s1
+run_name: null
+
 # logging
 logger:
   backend: wandb
